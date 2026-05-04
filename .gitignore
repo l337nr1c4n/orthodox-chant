@@ -1,0 +1,60 @@
+# Dart/Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.dart.js
+*.js_
+*.js.deps
+*.js.map
+doc/api/
+
+# Android
+android/app/google-services.json
+android/app/keystore.jks
+android/.gradle
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/captures/
+android/local.properties
+android/**/GeneratedPluginRegistrant.java
+
+# Signing / secrets
+*.jks
+*.p12
+*.keystore
+.env
+fastlane/.env
+fastlane/.env.*
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/ServiceDefinitions.json
+
+# Generated files
+*.g.dart
+*.freezed.dart
