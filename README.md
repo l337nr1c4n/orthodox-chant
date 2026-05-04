@@ -2,7 +2,7 @@
 
 > Real-time pitch feedback for Byzantine liturgical chanting — built to help Orthodox Christians learn the ancient tones of the Church.
 
-[![Flutter PR Check](https://github.com/isaacjramos/orthodox-chant/actions/workflows/pr_check.yml/badge.svg)](https://github.com/isaacjramos/orthodox-chant/actions/workflows/pr_check.yml)
+[![Flutter PR Check](https://github.com/l337nr1c4n/orthodox-chant/actions/workflows/pr_check.yml/badge.svg)](https://github.com/l337nr1c4n/orthodox-chant/actions/workflows/pr_check.yml)
 [![Flutter](https://img.shields.io/badge/Flutter-stable-02569B?logo=flutter)](https://flutter.dev)
 
 ---
@@ -77,7 +77,7 @@ LibraryScreen ──nav──► LessonScreen(hymnId)
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/isaacjramos/orthodox-chant.git
+git clone https://github.com/l337nr1c4n/orthodox-chant.git
 cd orthodox-chant
 
 # 2. Generate the standard Flutter project scaffold (first time only)
@@ -139,7 +139,7 @@ Four layers. Each has a distinct purpose and a corresponding CI stage.
 |-------|----------|-------------|--------------|
 | Unit | `test/unit/` | Every PR | No |
 | Widget | `test/widget/` | Every PR | No |
-| Integration | `integration_test/` | Merge to `main` | Emulator (CI) |
+| Integration | `integration_test/` | Merge to `master` | Emulator (CI) |
 | Physical device | Manual | Before release | Yes — mic required |
 
 ```bash
@@ -168,8 +168,8 @@ flutter test test/
 
 | Trigger | Pipeline | What it does |
 |---------|----------|-------------|
-| Pull request → `main` | `pr_check.yml` | analyze + unit + widget tests + debug APK build |
-| Push → `main` | `deploy.yml` | All above + integration tests (emulator) + release APK + Firebase App Distribution |
+| Pull request → `master` | `pr_check.yml` | analyze + unit + widget tests + debug APK build |
+| Push → `master` | `deploy.yml` | All above + integration tests (emulator) + release APK + Firebase App Distribution |
 
 ### GitHub Secrets (Settings → Secrets and variables → Actions)
 
