@@ -27,7 +27,7 @@ Flutter Android app that teaches Byzantine Orthodox chanting using real-time pit
 ```yaml
 dependencies:
   just_audio: ^0.9.40
-  pitch_detector_dart: ^0.2.0
+  pitch_detector_dart: ^0.0.7
   record: ^5.0.0
   permission_handler: ^11.3.0
   flutter_riverpod: ^2.5.1
@@ -39,7 +39,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
   integration_test:
     sdk: flutter
 ```
