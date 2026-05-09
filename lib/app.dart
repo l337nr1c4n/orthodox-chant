@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
+import 'features/library/screens/library_screen.dart';
+import 'features/lesson/screens/lesson_screen.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -11,11 +13,13 @@ class App extends ConsumerWidget {
       title: 'Orthodox Chant',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: const Scaffold(
-        body: Center(
-          child: Text('Orthodox Chanting'),
-        ),
-      ),
+      initialRoute: '/',
+      routes: {
+        '/': (_) => const LibraryScreen(),
+        '/lesson': (ctx) => LessonScreen(
+              hymnId: ModalRoute.of(ctx)!.settings.arguments as String,
+            ),
+      },
     );
   }
 }
