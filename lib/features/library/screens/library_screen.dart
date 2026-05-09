@@ -13,7 +13,7 @@ class LibraryScreen extends StatelessWidget {
     (
       id: 'tone1_trisagion',
       title: 'Ἅγιος ὁ Θεός',
-      subtitle: 'Trisagion • Tone 1 • 3 phrases',
+      subtitle: 'Trisagion • Tone 1 • 25 phrases',
     ),
   ];
 
