@@ -1,0 +1,13 @@
+{
+  "tone": "1",
+  "hymn": "kyrie_eleison",
+  "phrases": [
+    { "greek": "Κύ",  "transliteration": "Ky",  "target_note": "D4", "audio_offset_ms": 0    },
+    { "greek": "ρι",  "transliteration": "ri",  "target_note": "E4", "audio_offset_ms": 800  },
+    { "greek": "ε",   "transliteration": "e",   "target_note": "D4", "audio_offset_ms": 1600 },
+    { "greek": "ε",   "transliteration": "e",   "target_note": "C4", "audio_offset_ms": 2400 },
+    { "greek": "λέ",  "transliteration": "lei", "target_note": "D4", "audio_offset_ms": 3200 },
+    { "greek": "η",   "transliteration": "i",   "target_note": "E4", "audio_offset_ms": 4000 },
+    { "greek": "σον", "transliteration": "son", "target_note": "D4", "audio_offset_ms": 4800 }
+  ]
+}
