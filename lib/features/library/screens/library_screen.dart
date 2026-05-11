@@ -23,6 +23,13 @@ class LibraryScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Orthodox Chant'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.mic),
+            tooltip: 'Pitch test',
+            onPressed: () => Navigator.pushNamed(context, '/pitch-test'),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 16),

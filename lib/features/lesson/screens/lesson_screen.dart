@@ -30,6 +30,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     _requestMic();
   }
 
+  @override
+  void dispose() {
+    ref.read(audioServiceProvider).stop();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final loaded = await loadHymn(widget.hymnId);
     if (!mounted) return;
