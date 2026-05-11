@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -40,6 +41,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   bool _pitchStarting = false;
   bool _micGranted = false;
 
+  // Watchdog: restarts the stream if no PCM data arrives for 500 ms.
+  // This catches Samsung's silent freeze of AudioRecord during playback
+  // without triggering a playerState feedback loop.
+  Timer? _watchdog;
+  int _lastChunkMs = 0;
+
   @override
   void initState() {
     super.initState();
@@ -47,15 +54,47 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     _pitchActive = true;
     _load();
     _startPitch();
+    _startWatchdog();
   }
 
   @override
   void dispose() {
     _pitchActive = false;
+    _watchdog?.cancel();
     _audioService.stop();
     _recorder?.stop();
     _recorder?.dispose();
     super.dispose();
+  }
+
+  void _startWatchdog() {
+    _watchdog = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!_pitchActive || !mounted || _pitchStarting || _lastChunkMs == 0) {
+        return;
+      }
+      final silenceMs =
+          DateTime.now().millisecondsSinceEpoch - _lastChunkMs;
+      if (silenceMs > 500) {
+        _restartMic();
+      }
+    });
+  }
+
+  Future<void> _restartMic() async {
+    if (!_pitchActive || !mounted) return;
+    _pitchStarting = true;
+    _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // suppress watchdog during restart
+    await _recorder?.stop();
+    await _recorder?.dispose();
+    _recorder = null;
+    _pcmBuf.clear();
+    _pitchStarting = false;
+    _startPitch();
+  }
+
+  void _scheduleRestart() {
+    if (!_pitchActive || !mounted || _pitchStarting) return;
+    Future.delayed(const Duration(milliseconds: 300), _startPitch);
   }
 
   Future<void> _load() async {
@@ -66,27 +105,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _isLoading = false;
     });
     await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
-  }
-
-  // Proactive forced restart — called when playback starts. Samsung suspends
-  // AudioRecord without closing the stream, so onDone never fires. We tear
-  // down and rebuild the session before the freeze becomes visible to the user.
-  // _pitchStarting is set FIRST so any in-flight onDone can't race with us.
-  Future<void> _restartMic() async {
-    if (!_pitchActive || !mounted) return;
-    _pitchStarting = true;
-    await _recorder?.stop();
-    await _recorder?.dispose();
-    _recorder = null;
-    _pcmBuf.clear();
-    _pitchStarting = false;
-    _startPitch();
-  }
-
-  // Reactive restart — used by onDone/onError for spontaneous stream closures.
-  void _scheduleRestart() {
-    if (!_pitchActive || !mounted || _pitchStarting) return;
-    Future.delayed(const Duration(milliseconds: 300), _startPitch);
   }
 
   Future<void> _startPitch() async {
@@ -122,11 +140,14 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
           ),
         ),
       );
+
+      _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // reset watchdog clock
       if (mounted) setState(() => _micDebug = 'listening');
 
       const needed = 2048 * 2;
       stream.listen(
         (chunk) async {
+          _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // heartbeat
           _pcmBuf.addAll(chunk);
           while (_pcmBuf.length >= needed) {
             final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
@@ -180,20 +201,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (prev, next) {
+    ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
       next.whenData((state) {
         if (state.processingState == ProcessingState.completed) {
           _audioService.seekToStart();
         }
       });
-
-      // Samsung suspends AudioRecord when playback starts without closing
-      // the stream — force a fresh mic session 200 ms after play begins.
-      final wasPlaying = prev?.valueOrNull?.playing ?? false;
-      final nowPlaying = next.valueOrNull?.playing ?? false;
-      if (!wasPlaying && nowPlaying) {
-        Future.delayed(const Duration(milliseconds: 200), _restartMic);
-      }
     });
 
     final position = ref.watch(positionProvider);
