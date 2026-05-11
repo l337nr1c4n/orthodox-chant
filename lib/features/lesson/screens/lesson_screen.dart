@@ -1,13 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:pitch_detector_dart/pitch_detector.dart';
+import 'package:record/record.dart';
+
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
 import '../providers/audio_provider.dart';
-import '../providers/pitch_provider.dart';
-import '../widgets/phrase_display_widget.dart';
-import '../widgets/pitch_visualizer_widget.dart';
+import '../widgets/pitch_track_widget.dart';
+import '../../../shared/pitch_service.dart';
 
 class LessonScreen extends ConsumerStatefulWidget {
   final String hymnId;
@@ -19,20 +23,28 @@ class LessonScreen extends ConsumerStatefulWidget {
 }
 
 class _LessonScreenState extends ConsumerState<LessonScreen> {
+  // Hymn content
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
-  bool _micPermissionGranted = false;
+
+  // Pitch detection — direct (same approach as PitchTestScreen)
+  AudioRecorder? _recorder;
+  PitchDetector? _detector;
+  final List<int> _pcmBuf = [];
+  String? _detectedNote;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _requestMic();
+    _startPitch();
   }
 
   @override
   void dispose() {
     ref.read(audioServiceProvider).stop();
+    _recorder?.stop();
+    _recorder?.dispose();
     super.dispose();
   }
 
@@ -48,16 +60,48 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         .loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
-  Future<void> _requestMic() async {
+  Future<void> _startPitch() async {
     final status = await Permission.microphone.request();
-    if (!mounted) return;
-    setState(() => _micPermissionGranted = status.isGranted);
+    if (!status.isGranted || !mounted) return;
+
+    _recorder = AudioRecorder();
+    _detector = PitchDetector(
+      audioSampleRate: 44100.0,
+      bufferSize: 2048,
+    );
+
+    try {
+      final stream = await _recorder!.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 44100,
+          numChannels: 1,
+        ),
+      );
+
+      const needed = 2048 * 2; // bytes for 2048 int16 samples
+      stream.listen((chunk) async {
+        _pcmBuf.addAll(chunk);
+        while (_pcmBuf.length >= needed) {
+          final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
+          _pcmBuf.removeRange(0, needed);
+          final result = await _detector!.getPitchFromIntBuffer(bytes);
+          if (mounted) {
+            setState(() {
+              _detectedNote =
+                  result.pitched ? hzToNoteName(result.pitch) : null;
+            });
+          }
+        }
+      });
+    } catch (_) {
+      // Mic unavailable — pitch feedback disabled silently
+    }
   }
 
-  int _currentIndex(Duration position) {
+  int _currentIndex(int posMs) {
     if (_phrases.isEmpty) return 0;
-    final ms = position.inMilliseconds;
-    final idx = _phrases.lastIndexWhere((p) => ms >= p.audioOffsetMs);
+    final idx = _phrases.lastIndexWhere((p) => posMs >= p.audioOffsetMs);
     return idx < 0 ? 0 : idx;
   }
 
@@ -76,21 +120,9 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     final audioService = ref.watch(audioServiceProvider);
     final playerState = ref.watch(playerStateProvider);
 
-    // Only start pitch detection after permission is confirmed
-    final noteAsync = _micPermissionGranted
-        ? ref.watch(detectedNoteProvider)
-        : const AsyncValue<String?>.loading();
-    final detectedNote = noteAsync.valueOrNull;
-    final isListening = noteAsync.hasValue;
-
-    final currentIdx = position.when(
-      data: _currentIndex,
-      loading: () => 0,
-      error: (_, _) => 0,
-    );
-
-    final targetNote =
-        _phrases.isNotEmpty ? _phrases[currentIdx].targetNote : null;
+    final posMs =
+        (position.valueOrNull ?? Duration.zero).inMilliseconds;
+    final currentIdx = _currentIndex(posMs);
 
     final isPlaying = playerState.when(
       data: (s) => s.playing,
@@ -98,44 +130,23 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       error: (_, _) => false,
     );
 
-    final micStatus = !_micPermissionGranted
-        ? 'Microphone permission required'
-        : !isListening
-            ? 'Starting mic...'
-            : detectedNote ?? 'Listening...';
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(_phrases.isNotEmpty ? _phrases[0].greek : widget.hymnId),
+        title: Text(
+          _phrases.isNotEmpty ? _phrases[0].greek : widget.hymnId,
+        ),
         centerTitle: true,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(),
-                PhraseDisplayWidget(
+                PitchTrackWidget(
                   phrases: _phrases,
                   currentIndex: currentIdx,
-                ),
-                const SizedBox(height: 32),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: PitchVisualizerWidget(
-                    targetNote: targetNote,
-                    detectedNote: detectedNote,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  micStatus,
-                  style: TextStyle(
-                    color: detectedNote != null
-                        ? const Color(0xFFCFB53B)
-                        : Colors.white38,
-                    fontSize: 13,
-                  ),
+                  positionMs: posMs,
+                  detectedNote: _detectedNote,
                 ),
                 const Spacer(),
                 Padding(

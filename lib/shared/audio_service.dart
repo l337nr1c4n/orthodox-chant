@@ -3,7 +3,10 @@ import 'package:just_audio/just_audio.dart';
 class AudioService {
   final AudioPlayer _player = AudioPlayer();
 
-  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration> get positionStream => _player.createPositionStream(
+        minPeriod: const Duration(milliseconds: 50),
+        maxPeriod: const Duration(milliseconds: 100),
+      );
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
 
   Future<void> loadAsset(String assetPath) async {
