@@ -27,16 +27,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   }
 
   Future<void> _load() async {
-    final phrases = await loadHymn(widget.hymnId);
+    final loaded = await loadHymn(widget.hymnId);
     if (!mounted) return;
     setState(() {
-      _phrases = phrases;
+      _phrases = loaded.phrases;
       _isLoading = false;
     });
-    final audioName = widget.hymnId.replaceFirst('tone1_', '');
     await ref
         .read(audioServiceProvider)
-        .loadAsset('assets/audio/tone1/$audioName.mp3');
+        .loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
   int _currentIndex(Duration position) {

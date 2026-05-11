@@ -8,6 +8,7 @@ class AudioService {
 
   Future<void> loadAsset(String assetPath) async {
     try {
+      await _player.stop();
       await _player.setAudioSource(AudioSource.asset(assetPath));
     } catch (_) {}
   }
