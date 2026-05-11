@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
 import '../providers/audio_provider.dart';
@@ -20,11 +21,13 @@ class LessonScreen extends ConsumerStatefulWidget {
 class _LessonScreenState extends ConsumerState<LessonScreen> {
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
+  bool _micPermissionGranted = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _requestMic();
   }
 
   Future<void> _load() async {
@@ -39,6 +42,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         .loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
+  Future<void> _requestMic() async {
+    final status = await Permission.microphone.request();
+    if (!mounted) return;
+    setState(() => _micPermissionGranted = status.isGranted);
+  }
+
   int _currentIndex(Duration position) {
     if (_phrases.isEmpty) return 0;
     final ms = position.inMilliseconds;
@@ -48,7 +57,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Seek back to start when playback finishes so Play works again
+    // Seek back to start when playback finishes
     ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
       next.whenData((state) {
         if (state.processingState == ProcessingState.completed) {
@@ -60,7 +69,13 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     final position = ref.watch(positionProvider);
     final audioService = ref.watch(audioServiceProvider);
     final playerState = ref.watch(playerStateProvider);
-    final detectedNote = ref.watch(detectedNoteProvider).valueOrNull;
+
+    // Only start pitch detection after permission is confirmed
+    final noteAsync = _micPermissionGranted
+        ? ref.watch(detectedNoteProvider)
+        : const AsyncValue<String?>.loading();
+    final detectedNote = noteAsync.valueOrNull;
+    final isListening = noteAsync.hasValue;
 
     final currentIdx = position.when(
       data: _currentIndex,
@@ -76,6 +91,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       loading: () => false,
       error: (_, _) => false,
     );
+
+    final micStatus = !_micPermissionGranted
+        ? 'Microphone permission required'
+        : !isListening
+            ? 'Starting mic...'
+            : detectedNote ?? 'Listening...';
 
     return Scaffold(
       appBar: AppBar(
@@ -98,6 +119,16 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                   child: PitchVisualizerWidget(
                     targetNote: targetNote,
                     detectedNote: detectedNote,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  micStatus,
+                  style: TextStyle(
+                    color: detectedNote != null
+                        ? const Color(0xFFCFB53B)
+                        : Colors.white38,
+                    fontSize: 13,
                   ),
                 ),
                 const Spacer(),
