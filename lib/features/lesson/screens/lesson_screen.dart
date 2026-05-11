@@ -30,14 +30,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
 
-  // Pitch detection
   AudioRecorder? _recorder;
   PitchDetector? _detector;
   final List<int> _pcmBuf = [];
   String? _detectedNote;
   String _micDebug = 'starting...';
 
-  // Guards: prevent double-start and restart after dispose
   bool _pitchActive = false;
   bool _pitchStarting = false;
   bool _micGranted = false;
@@ -70,8 +68,22 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
-  // Called on stream termination — Samsung audio hardware kills the AudioRecord
-  // session when playback starts. We restart transparently after 300 ms.
+  // Proactive forced restart — called when playback starts. Samsung suspends
+  // AudioRecord without closing the stream, so onDone never fires. We tear
+  // down and rebuild the session before the freeze becomes visible to the user.
+  // _pitchStarting is set FIRST so any in-flight onDone can't race with us.
+  Future<void> _restartMic() async {
+    if (!_pitchActive || !mounted) return;
+    _pitchStarting = true;
+    await _recorder?.stop();
+    await _recorder?.dispose();
+    _recorder = null;
+    _pcmBuf.clear();
+    _pitchStarting = false;
+    _startPitch();
+  }
+
+  // Reactive restart — used by onDone/onError for spontaneous stream closures.
   void _scheduleRestart() {
     if (!_pitchActive || !mounted || _pitchStarting) return;
     Future.delayed(const Duration(milliseconds: 300), _startPitch);
@@ -92,7 +104,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         _micGranted = true;
       }
 
-      // Tear down any previous session before starting a new one.
       await _recorder?.stop();
       await _recorder?.dispose();
       _recorder = null;
@@ -147,7 +158,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
             }
           }
         },
-        // Audio session killed by playback start — restart transparently.
         onDone: _scheduleRestart,
         onError: (e) {
           if (mounted) setState(() => _micDebug = 'mic error — restarting');
@@ -170,12 +180,20 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
+    ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (prev, next) {
       next.whenData((state) {
         if (state.processingState == ProcessingState.completed) {
           _audioService.seekToStart();
         }
       });
+
+      // Samsung suspends AudioRecord when playback starts without closing
+      // the stream — force a fresh mic session 200 ms after play begins.
+      final wasPlaying = prev?.valueOrNull?.playing ?? false;
+      final nowPlaying = next.valueOrNull?.playing ?? false;
+      if (!wasPlaying && nowPlaying) {
+        Future.delayed(const Duration(milliseconds: 200), _restartMic);
+      }
     });
 
     final position = ref.watch(positionProvider);
