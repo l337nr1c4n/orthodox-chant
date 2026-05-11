@@ -186,29 +186,31 @@ class _TrackPainter extends CustomPainter {
         Paint()..color = blockColor,
       );
 
-      // Greek syllable above block
+      // Transliteration above block (pronunciation guide)
       _drawText(
         canvas,
-        phrase.greek,
+        phrase.transliteration,
         blockX,
         blockY - h / 2 - 6,
         isActive
             ? const TextStyle(
                 color: _gold,
-                fontSize: 22,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
               )
-            : const TextStyle(color: Colors.white38, fontSize: 15),
+            : const TextStyle(color: Colors.white38, fontSize: 13),
         anchorBottom: true,
       );
 
-      // Transliteration below block
+      // Greek below block
       _drawText(
         canvas,
-        phrase.transliteration,
+        phrase.greek,
         blockX,
         blockY + h / 2 + 4,
-        const TextStyle(color: Colors.white24, fontSize: 10),
+        isActive
+            ? const TextStyle(color: _gold, fontSize: 13)
+            : const TextStyle(color: Colors.white24, fontSize: 11),
         anchorBottom: false,
       );
     }

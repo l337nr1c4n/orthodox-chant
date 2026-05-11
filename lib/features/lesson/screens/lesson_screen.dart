@@ -32,6 +32,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   PitchDetector? _detector;
   final List<int> _pcmBuf = [];
   String? _detectedNote;
+  String _micDebug = 'starting...';
 
   @override
   void initState() {
@@ -62,13 +63,14 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   Future<void> _startPitch() async {
     final status = await Permission.microphone.request();
-    if (!status.isGranted || !mounted) return;
+    if (!mounted) return;
+    if (!status.isGranted) {
+      setState(() => _micDebug = 'permission denied');
+      return;
+    }
 
     _recorder = AudioRecorder();
-    _detector = PitchDetector(
-      audioSampleRate: 44100.0,
-      bufferSize: 2048,
-    );
+    _detector = PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
 
     try {
       final stream = await _recorder!.startStream(
@@ -76,10 +78,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 44100,
           numChannels: 1,
+          // Disable Android AEC — it suppresses voice when speaker is active
+          androidConfig: AndroidRecordConfig(
+            audioSource: AndroidAudioSource.voicePerformance,
+          ),
         ),
       );
+      if (mounted) setState(() => _micDebug = 'listening');
 
-      const needed = 2048 * 2; // bytes for 2048 int16 samples
+      const needed = 2048 * 2;
       stream.listen((chunk) async {
         _pcmBuf.addAll(chunk);
         while (_pcmBuf.length >= needed) {
@@ -90,12 +97,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
             setState(() {
               _detectedNote =
                   result.pitched ? hzToNoteName(result.pitch) : null;
+              _micDebug = result.pitched
+                  ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
+                  : 'listening';
             });
           }
         }
       });
-    } catch (_) {
-      // Mic unavailable — pitch feedback disabled silently
+    } catch (e) {
+      if (mounted) setState(() => _micDebug = 'error: $e');
     }
   }
 
@@ -147,6 +157,16 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                   currentIndex: currentIdx,
                   positionMs: posMs,
                   detectedNote: _detectedNote,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _micDebug,
+                  style: TextStyle(
+                    color: _detectedNote != null
+                        ? const Color(0xFFCFB53B)
+                        : Colors.white24,
+                    fontSize: 12,
+                  ),
                 ),
                 const Spacer(),
                 Padding(
