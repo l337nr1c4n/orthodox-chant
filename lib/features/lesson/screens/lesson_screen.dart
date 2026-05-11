@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -92,6 +93,16 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         while (_pcmBuf.length >= needed) {
           final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
           _pcmBuf.removeRange(0, needed);
+
+          // RMS amplitude — always computed so debug shows mic level even
+          // when no pitch is detected (distinguishes "muted" from "noise")
+          final samples = bytes.buffer.asInt16List();
+          var sumSq = 0.0;
+          for (final s in samples) {
+            sumSq += s * s;
+          }
+          final rms = sqrt(sumSq / samples.length) / 32768.0;
+
           final result = await _detector!.getPitchFromIntBuffer(bytes);
           if (mounted) {
             setState(() {
@@ -99,7 +110,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                   result.pitched ? hzToNoteName(result.pitch) : null;
               _micDebug = result.pitched
                   ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
-                  : 'listening';
+                  : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
             });
           }
         }

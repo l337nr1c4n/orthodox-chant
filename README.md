@@ -7,73 +7,140 @@
 
 ---
 
-## Why This Exists
+## What This App Does
 
-No app teaches you to chant. Every Orthodox music app on the market is a passive reference tool — recordings you listen to, not interact with. A new chanter has no way to know whether they are singing the right pitch, whether their ear is calibrated to the mode, or where they are in the phrase. They depend entirely on a human teacher who may not be available.
+No app teaches you to chant. Every Orthodox music app on the market is a passive reference tool — recordings you listen to, not interact with. A new chanter has no way to know whether they are singing the right pitch, whether their ear is calibrated to the mode, or where they are in the phrase.
 
-This app changes that. Sing into your phone, receive instant feedback — too high, correct, too low — synced to the reference audio and the Greek text. It is the same core mechanic as Simply Sing!, applied to the Octoechos. The goal is to put a patient, always-available chanting tutor in every parishioner's pocket.
+This app changes that. Open a hymn, press play, sing into your phone — the app tells you instantly whether you are too high, correct, or too low, synced to the Greek text on screen. The goal is a patient, always-available chanting tutor in every parishioner's pocket.
 
-This is a mission, not a product. All code is public.
+**Current POC includes:**
 
----
+| Hymn             | Greek              | Notes                                   |
+|------------------|--------------------|-----------------------------------------|
+| Lord Have Mercy  | Κύριε ἐλέησον      | 7 syllables — the perfect first lesson  |
+| Trisagion        | Ἅγιος ὁ Θεός...    | Familiar to any parish attendee         |
 
-## POC Scope
-
-One tone. Two hymns.
-
-| Hymn | Greek | Why |
-|------|-------|-----|
-| Lord Have Mercy | Κύριε ἐλέησον | 3 syllables, universal — the perfect first lesson |
-| Trisagion | Ἅγιος ὁ Θεός... | Slightly longer, familiar to any parish attendee |
-
-**Tone 1** (Πρῶτος Ἦχος) — First tone, plagal mode. The most foundational.
-
-The POC is complete when a non-developer (parish member) can install the APK, open the app, tap Kyrie Eleison, and receive real-time pitch feedback without any instructions.
+Both are Tone 1 (Πρῶτος Ἦχος). Reference audio is a synthesized sine-tone — not a real chant recording yet. That comes in the next phase.
 
 ---
 
-## Architecture
+## Installing on Android (Sideload APK)
 
-```
-assets/data/tone1_kyrie.json
-assets/data/tone1_trisagion.json
-        │
-        ▼
-  ToneRepository ──────────────────────────────┐
-  (loads JSON, parses ChantPhrase list)        │
-        │                                      │
-        ▼                                      ▼
-  AudioProvider (Riverpod)          PitchProvider (Riverpod)
-  └─ AudioService (just_audio)      └─ PitchService (pitch_detector_dart)
-      plays reference MP3               mic stream → Hz → note name
-      exposes positionStream            emits detected note name
-        │                                      │
-        └──────────────┬───────────────────────┘
-                       ▼
-               LessonScreen
-               ├── PhraseDisplayWidget  (Greek + transliteration, current syllable highlighted)
-               └── PitchFeedbackWidget  (↑ / ✓ / ↓  animated indicator)
+This is the fastest way to get the app. No app store, no account required.
 
-LibraryScreen ──nav──► LessonScreen(hymnId)
-```
+### Step 1 — Get the APK
+
+**Option A — Download from GitHub Actions (recommended):**
+
+1. Go to [github.com/l337nr1c4n/orthodox-chant/actions](https://github.com/l337nr1c4n/orthodox-chant/actions)
+2. Click the most recent passing run on the branch `ORT-34/fix-lesson-audio-and-pitch`
+3. Scroll to the bottom of the run page and find **Artifacts**
+4. Download `app-debug.apk`
+
+**Option B — Get it from Isaac directly:**
+
+Isaac can share the `app-debug.apk` file over Signal, email, or Google Drive. Just ask.
 
 ---
 
-## Tech Stack
+### Step 2 — Allow installing apps from outside the Play Store
 
-| Layer | Choice |
-|-------|--------|
-| Framework | Flutter (Dart) — single codebase, Android now, iOS later |
-| Pitch detection | `pitch_detector_dart` — pure Dart autocorrelation, no native bridge |
-| Audio playback | `just_audio` — industry standard, local assets, gapless |
-| Mic stream | `record` — raw PCM stream fed to pitch detector |
-| State management | `flutter_riverpod` — lightweight, testable |
-| Backend | Firebase Spark (free tier) — Firestore, Auth, App Distribution |
-| CI/CD | GitHub Actions + Fastlane |
+Android blocks unknown sources by default. You only need to do this once.
+
+**Android 8.0 and newer (most phones):**
+
+1. Open **Settings**
+2. Go to **Apps** (or **Apps & notifications**)
+3. Tap **Special app access** (may be under Advanced)
+4. Tap **Install unknown apps**
+5. Find your file manager or browser (whichever you will use to open the APK) and toggle **Allow from this source** on
+
+**Android 7 and older:**
+
+1. Open **Settings**
+2. Go to **Security**
+3. Turn on **Unknown sources**
 
 ---
 
-## Getting Started
+### Step 3 — Install the APK
+
+1. Open the APK file you downloaded (tap it in your Downloads folder or file manager)
+2. Android will ask if you want to install it — tap **Install**
+3. When it finishes, tap **Open**
+
+---
+
+### Step 4 — Grant the microphone permission
+
+The first time you open a hymn lesson, the app will ask for microphone access. Tap **Allow** — this is how the app hears you sing and gives pitch feedback. The mic is never used outside the lesson screen.
+
+**Requirements:** Android 5.0 or newer (almost any phone from 2014 onward works).
+
+---
+
+## Installing on iPhone (iOS)
+
+iOS is not available yet.
+
+Distributing an iOS app outside the App Store requires either:
+
+- A Mac running Xcode to build and sideload directly to your device, or
+- A TestFlight invite from Apple's official beta platform
+
+Neither is set up for this project yet. When iOS is ready, this section will have full instructions. Until then:
+
+- If you have a Mac and want to help set up the iOS build, contact Isaac.
+- If you want a TestFlight invite when it goes live, let Isaac know and he will add you to the list.
+
+---
+
+## How to Test the App
+
+Once installed, here is what to try:
+
+### 1. Open the Library
+
+The app opens to the Library screen showing Tone 1 with two hymns listed — **Lord Have Mercy** and **Trisagion**.
+
+### 2. Tap a hymn
+
+Tap **Lord Have Mercy** (Kyrie Eleison) to open the lesson. It is shorter, so it is a good first test.
+
+### 3. Press Play
+
+Tap the play button. A reference tone will play — this is a synthesized pitch (sine wave), not a real chant recording yet. The Greek text and transliteration on screen will highlight each syllable as the audio progresses.
+
+### 4. Sing along and watch the feedback
+
+While the reference tone plays, sing the syllable shown on screen. Watch the pitch indicator:
+
+| Indicator | Meaning                                          |
+|-----------|--------------------------------------------------|
+| **↑**     | You are singing too low — bring your pitch up    |
+| **✓**     | You are on the right note — hold it              |
+| **↓**     | You are singing too high — bring your pitch down |
+
+The indicator updates in near real-time (under 200ms). Try deliberately singing flat or sharp to see it respond.
+
+### 5. What to check for
+
+- Does the Greek text highlight syllable by syllable as audio plays?
+- Does the pitch indicator respond when you sing?
+- Does it correctly show ✓ when you match the pitch and ↑/↓ when you are off?
+- Does the app stay stable through the full hymn (no crashes)?
+
+---
+
+## A Note on the Current Audio
+
+The reference audio right now is a **synthesized sine tone**, not a real Byzantine chant recording. It plays the correct pitches for each syllable, but it sounds like a tuning fork — not a human chanter. Real recorded audio is being prepared for the next phase. The pitch feedback logic is fully functional regardless.
+
+---
+
+## Developer Setup
+
+If you are a developer and want to run from source:
 
 ```bash
 # 1. Clone the repo
@@ -90,9 +157,48 @@ flutter pub get
 flutter run
 ```
 
-> `google-services.json` is not in the repo. Firebase features are stubbed out gracefully — the app runs fully offline without it.
+> `google-services.json` is not in the repo. Firebase features fail gracefully — the app runs fully offline without it.
 
-> Audio files (`assets/audio/tone1/`) are placeholders. The app will not crash without them, but audio will not play. Your partner adds real recordings.
+---
+
+## Architecture
+
+```
+assets/data/tone1_kyrie.json
+assets/data/tone1_trisagion.json
+        │
+        ▼
+  ToneRepository ──────────────────────────────┐
+  (loads JSON, parses ChantPhrase list)        │
+        │                                      │
+        ▼                                      ▼
+  AudioProvider (Riverpod)          PitchProvider (Riverpod)
+  └─ AudioService (just_audio)      └─ PitchService (pitch_detector_dart)
+      plays reference tone               mic stream → Hz → note name
+      exposes positionStream            emits detected note name
+        │                                      │
+        └──────────────┬───────────────────────┘
+                       ▼
+               LessonScreen
+               ├── PhraseDisplayWidget  (Greek + transliteration, current syllable highlighted)
+               └── PitchFeedbackWidget  (↑ / ✓ / ↓  animated indicator)
+
+LibraryScreen ──nav──► LessonScreen(hymnId)
+```
+
+---
+
+## Tech Stack
+
+| Layer            | Choice                                                               |
+|------------------|----------------------------------------------------------------------|
+| Framework        | Flutter (Dart) — single codebase, Android now, iOS later            |
+| Pitch detection  | `pitch_detector_dart` — pure Dart autocorrelation, no native bridge  |
+| Audio playback   | `just_audio` — industry standard, local assets, gapless              |
+| Mic stream       | `record` — raw PCM stream fed to pitch detector                      |
+| State management | `flutter_riverpod` — lightweight, testable                           |
+| Backend          | Firebase Spark (free tier) — Firestore, Auth, App Distribution       |
+| CI/CD            | GitHub Actions + Fastlane                                            |
 
 ---
 
@@ -131,9 +237,7 @@ orthodox-chant/
 
 ---
 
-## Testing
-
-Four layers. Each has a distinct purpose and a corresponding CI stage.
+## Testing (Developers)
 
 | Layer | Location | When it runs | Needs device? |
 |-------|----------|-------------|--------------|
@@ -143,21 +247,13 @@ Four layers. Each has a distinct purpose and a corresponding CI stage.
 | Physical device | Manual | Before release | Yes — mic required |
 
 ```bash
-# Run unit tests
 flutter test test/unit/
-
-# Run widget tests
 flutter test test/widget/
-
-# Run integration tests (requires connected device or emulator)
 flutter test integration_test/
-
-# Run everything except integration
-flutter test test/
 ```
 
 **Pitch detection acceptance test (physical device only):**
-- Sing D4 (293.66 Hz) → app shows ✓
+- Sing D4 (293.66 Hz) while targeting D4 → app shows ✓
 - Sing E4 while targeting D4 → app shows ↓
 - Sing C4 while targeting D4 → app shows ↑
 - Correct zone: ±50 cents
@@ -171,7 +267,7 @@ flutter test test/
 | Pull request → `master` | `pr_check.yml` | analyze + unit + widget tests + debug APK build |
 | Push → `master` | `deploy.yml` | All above + integration tests (emulator) + release APK + Firebase App Distribution |
 
-### GitHub Secrets (Settings → Secrets and variables → Actions)
+### GitHub Secrets Required
 
 | Secret | How to get it |
 |--------|--------------|
@@ -191,21 +287,14 @@ flutter test test/
 
 We use **[Linear](https://linear.app)** for story tracking. Reach out to Isaac for workspace access.
 
-Cycles map to implementation phases:
-1. Infrastructure (repo, Firebase, CI/CD)
-2. Pitch Loop (PitchService, AudioService, Riverpod)
-3. Lesson Screen (ChantPhrase, PhraseDisplayWidget, LessonScreen)
-4. Content Integration (audio recordings, JSON data, timestamps)
-5. Library + Polish (LibraryScreen, theme, onboarding, demo APK)
-
 ### Branch Naming
 
 ```
-CHT-{linear-id}/short-kebab-description
+ORT-{linear-id}/short-kebab-description
 
 # Examples
-CHT-12/pitch-feedback-widget
-CHT-7/lesson-screen-layout
+ORT-12/pitch-feedback-widget
+ORT-7/lesson-screen-layout
 ```
 
 ### Pull Requests
