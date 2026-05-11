@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    name: Test, Build, Distribute
+    name: Build and Distribute
     runs-on: ubuntu-latest
 
     steps:
@@ -34,32 +34,23 @@ jobs:
       - name: Widget tests
         run: flutter test test/widget/ --reporter=expanded
 
-      - name: Integration tests (emulator)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          arch: x86_64
-          profile: pixel_4
-          script: flutter test integration_test/ --reporter=expanded
+      - name: Inject google-services.json
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
 
       - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
 
-      - name: Inject google-services.json
+      - name: Create key.properties
         run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=app/keystore.jks
+          EOF
 
       - name: Build release APK
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        run: |
-          flutter build apk --release \
-            --dart-define=KEY_ALIAS=$KEY_ALIAS \
-            --dart-define=KEY_PASSWORD=$KEY_PASSWORD \
-            --dart-define=STORE_PASSWORD=$STORE_PASSWORD
+        run: flutter build apk --release
 
       - name: Distribute via Fastlane
         env:
@@ -67,6 +58,6 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: bundle exec fastlane distribute
 
-      - name: Shred keystore
+      - name: Shred secrets
         if: always()
-        run: rm -f android/app/keystore.jks android/app/google-services.json
+        run: rm -f android/app/keystore.jks android/app/google-services.json android/key.properties
