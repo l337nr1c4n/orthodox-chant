@@ -1,4 +1,4 @@
-package com.orthodoxchant.orthodox_chant
+package com.orthodoxchant
 
 import io.flutter.embedding.android.FlutterActivity
 
