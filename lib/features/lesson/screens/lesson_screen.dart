@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
 import '../providers/audio_provider.dart';
 import '../providers/pitch_provider.dart';
 import '../widgets/phrase_display_widget.dart';
-import '../widgets/pitch_feedback_widget.dart';
+import '../widgets/pitch_visualizer_widget.dart';
 
 class LessonScreen extends ConsumerStatefulWidget {
   final String hymnId;
@@ -47,10 +48,19 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Seek back to start when playback finishes so Play works again
+    ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
+      next.whenData((state) {
+        if (state.processingState == ProcessingState.completed) {
+          ref.read(audioServiceProvider).seekToStart();
+        }
+      });
+    });
+
     final position = ref.watch(positionProvider);
     final audioService = ref.watch(audioServiceProvider);
     final playerState = ref.watch(playerStateProvider);
-    final detectedNote = ref.watch(detectedNoteProvider);
+    final detectedNote = ref.watch(detectedNoteProvider).valueOrNull;
 
     final currentIdx = position.when(
       data: _currentIndex,
@@ -60,14 +70,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
     final targetNote =
         _phrases.isNotEmpty ? _phrases[currentIdx].targetNote : null;
-
-    final feedback = detectedNote.when(
-      data: (note) => note != null && targetNote != null
-          ? ref.watch(pitchFeedbackProvider(targetNote))
-          : PitchFeedback.inactive,
-      loading: () => PitchFeedback.inactive,
-      error: (_, _) => PitchFeedback.inactive,
-    );
 
     final isPlaying = playerState.when(
       data: (s) => s.playing,
@@ -90,8 +92,14 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                   phrases: _phrases,
                   currentIndex: currentIdx,
                 ),
-                const SizedBox(height: 48),
-                PitchFeedbackWidget(feedback: feedback),
+                const SizedBox(height: 32),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: PitchVisualizerWidget(
+                    targetNote: targetNote,
+                    detectedNote: detectedNote,
+                  ),
+                ),
                 const Spacer(),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 48),
