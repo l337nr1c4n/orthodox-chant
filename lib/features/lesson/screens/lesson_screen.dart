@@ -25,30 +25,35 @@ class LessonScreen extends ConsumerStatefulWidget {
 }
 
 class _LessonScreenState extends ConsumerState<LessonScreen> {
-  // Cached so dispose() doesn't call ref after the widget detaches.
   late AudioService _audioService;
 
-  // Hymn content
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
 
-  // Pitch detection — direct (same approach as PitchTestScreen)
+  // Pitch detection
   AudioRecorder? _recorder;
   PitchDetector? _detector;
   final List<int> _pcmBuf = [];
   String? _detectedNote;
   String _micDebug = 'starting...';
 
+  // Guards: prevent double-start and restart after dispose
+  bool _pitchActive = false;
+  bool _pitchStarting = false;
+  bool _micGranted = false;
+
   @override
   void initState() {
     super.initState();
     _audioService = ref.read(audioServiceProvider);
+    _pitchActive = true;
     _load();
     _startPitch();
   }
 
   @override
   void dispose() {
+    _pitchActive = false;
     _audioService.stop();
     _recorder?.stop();
     _recorder?.dispose();
@@ -65,18 +70,37 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
-  Future<void> _startPitch() async {
-    final status = await Permission.microphone.request();
-    if (!mounted) return;
-    if (!status.isGranted) {
-      setState(() => _micDebug = 'permission denied');
-      return;
-    }
+  // Called on stream termination — Samsung audio hardware kills the AudioRecord
+  // session when playback starts. We restart transparently after 300 ms.
+  void _scheduleRestart() {
+    if (!_pitchActive || !mounted || _pitchStarting) return;
+    Future.delayed(const Duration(milliseconds: 300), _startPitch);
+  }
 
-    _recorder = AudioRecorder();
-    _detector = PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
+  Future<void> _startPitch() async {
+    if (!_pitchActive || !mounted || _pitchStarting) return;
+    _pitchStarting = true;
 
     try {
+      if (!_micGranted) {
+        final status = await Permission.microphone.request();
+        if (!mounted || !_pitchActive) return;
+        if (!status.isGranted) {
+          setState(() => _micDebug = 'mic: permission denied');
+          return;
+        }
+        _micGranted = true;
+      }
+
+      // Tear down any previous session before starting a new one.
+      await _recorder?.stop();
+      await _recorder?.dispose();
+      _recorder = null;
+      _pcmBuf.clear();
+
+      _recorder = AudioRecorder();
+      _detector ??= PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
+
       final stream = await _recorder!.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -90,42 +114,51 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       if (mounted) setState(() => _micDebug = 'listening');
 
       const needed = 2048 * 2;
-      stream.listen((chunk) async {
-        _pcmBuf.addAll(chunk);
-        while (_pcmBuf.length >= needed) {
-          final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
-          _pcmBuf.removeRange(0, needed);
+      stream.listen(
+        (chunk) async {
+          _pcmBuf.addAll(chunk);
+          while (_pcmBuf.length >= needed) {
+            final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
+            _pcmBuf.removeRange(0, needed);
 
-          // RMS on raw samples — shows real mic level in the debug line.
-          final samples = bytes.buffer.asInt16List();
-          var sumSq = 0.0;
-          for (final s in samples) {
-            sumSq += s * s;
-          }
-          final rms = sqrt(sumSq / samples.length) / 32768.0;
+            final samples = bytes.buffer.asInt16List();
+            var sumSq = 0.0;
+            for (final s in samples) {
+              sumSq += s * s;
+            }
+            final rms = sqrt(sumSq / samples.length) / 32768.0;
 
-          // 16× software gain: phone mic raw level is ~1–2% RMS unprocessed.
-          // Pitch detector needs ~10%+ to reliably lock pitch.
-          final amplified = Int16List(samples.length);
-          for (int i = 0; i < samples.length; i++) {
-            amplified[i] = (samples[i] * 16).clamp(-32768, 32767).toInt();
-          }
+            // 16× software gain: unprocessed mic is ~1–2% RMS raw.
+            final amplified = Int16List(samples.length);
+            for (int i = 0; i < samples.length; i++) {
+              amplified[i] = (samples[i] * 16).clamp(-32768, 32767).toInt();
+            }
 
-          final result = await _detector!
-              .getPitchFromIntBuffer(amplified.buffer.asUint8List());
-          if (mounted) {
-            setState(() {
-              _detectedNote =
-                  result.pitched ? hzToNoteName(result.pitch) : null;
-              _micDebug = result.pitched
-                  ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
-                  : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
-            });
+            final result = await _detector!
+                .getPitchFromIntBuffer(amplified.buffer.asUint8List());
+            if (mounted) {
+              setState(() {
+                _detectedNote =
+                    result.pitched ? hzToNoteName(result.pitch) : null;
+                _micDebug = result.pitched
+                    ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
+                    : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
+              });
+            }
           }
-        }
-      });
+        },
+        // Audio session killed by playback start — restart transparently.
+        onDone: _scheduleRestart,
+        onError: (e) {
+          if (mounted) setState(() => _micDebug = 'mic error — restarting');
+          _scheduleRestart();
+        },
+      );
     } catch (e) {
       if (mounted) setState(() => _micDebug = 'error: $e');
+      _scheduleRestart();
+    } finally {
+      _pitchStarting = false;
     }
   }
 
@@ -137,7 +170,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Seek back to start when playback finishes
     ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
       next.whenData((state) {
         if (state.processingState == ProcessingState.completed) {
@@ -149,8 +181,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     final position = ref.watch(positionProvider);
     final playerState = ref.watch(playerStateProvider);
 
-    final posMs =
-        (position.valueOrNull ?? Duration.zero).inMilliseconds;
+    final posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
     final currentIdx = _currentIndex(posMs);
 
     final isPlaying = playerState.when(
@@ -159,13 +190,9 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       error: (_, _) => false,
     );
 
-    // Stop audio immediately when the user navigates back so the stop
-    // happens before the route animation rather than after it completes.
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) {
-          _audioService.stop();
-        }
+        if (didPop) _audioService.stop();
       },
       child: Scaffold(
         appBar: AppBar(
