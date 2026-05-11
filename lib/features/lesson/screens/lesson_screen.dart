@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +13,7 @@ import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/pitch_track_widget.dart';
+import '../../../shared/audio_service.dart';
 import '../../../shared/pitch_service.dart';
 
 class LessonScreen extends ConsumerStatefulWidget {
@@ -24,6 +26,12 @@ class LessonScreen extends ConsumerStatefulWidget {
 }
 
 class _LessonScreenState extends ConsumerState<LessonScreen> {
+  // Earpiece routing: keep speaker far from mic so AEC has nothing to cancel.
+  static const _audioChannel = MethodChannel('com.orthodoxchant/audio');
+
+  // Cached so dispose() doesn't have to call ref.read() after widget detaches.
+  late AudioService _audioService;
+
   // Hymn content
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
@@ -38,13 +46,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   @override
   void initState() {
     super.initState();
+    _audioService = ref.read(audioServiceProvider);
     _load();
     _startPitch();
   }
 
   @override
   void dispose() {
-    ref.read(audioServiceProvider).stop();
+    _audioChannel.invokeMethod('setModeNormal');
+    _audioService.stop();
     _recorder?.stop();
     _recorder?.dispose();
     super.dispose();
@@ -57,9 +67,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _phrases = loaded.phrases;
       _isLoading = false;
     });
-    await ref
-        .read(audioServiceProvider)
-        .loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
+    await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
   }
 
   Future<void> _startPitch() async {
@@ -70,6 +78,10 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       return;
     }
 
+    // Route audio through earpiece (small top speaker, 15 cm from bottom mic).
+    // This breaks the speaker→mic echo loop that triggers Android hardware AEC.
+    await _audioChannel.invokeMethod('setModeCommunication');
+
     _recorder = AudioRecorder();
     _detector = PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
 
@@ -79,9 +91,8 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 44100,
           numChannels: 1,
-          // Disable Android AEC — it suppresses voice when speaker is active
           androidConfig: AndroidRecordConfig(
-            audioSource: AndroidAudioSource.voicePerformance,
+            audioSource: AndroidAudioSource.unprocessed,
           ),
         ),
       );
@@ -94,8 +105,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
           final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
           _pcmBuf.removeRange(0, needed);
 
-          // RMS amplitude — always computed so debug shows mic level even
-          // when no pitch is detected (distinguishes "muted" from "noise")
+          // RMS on raw samples — shows real mic level in debug line.
           final samples = bytes.buffer.asInt16List();
           var sumSq = 0.0;
           for (final s in samples) {
@@ -103,7 +113,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
           }
           final rms = sqrt(sumSq / samples.length) / 32768.0;
 
-          final result = await _detector!.getPitchFromIntBuffer(bytes);
+          // 16× gain: phone mic raw level is very low (~1–2% RMS).
+          // Pitch detector needs ~10%+ to reliably detect pitch.
+          final amplified = Int16List(samples.length);
+          for (int i = 0; i < samples.length; i++) {
+            amplified[i] = (samples[i] * 16).clamp(-32768, 32767).toInt();
+          }
+
+          final result = await _detector!
+              .getPitchFromIntBuffer(amplified.buffer.asUint8List());
           if (mounted) {
             setState(() {
               _detectedNote =
@@ -132,13 +150,12 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     ref.listen<AsyncValue<PlayerState>>(playerStateProvider, (_, next) {
       next.whenData((state) {
         if (state.processingState == ProcessingState.completed) {
-          ref.read(audioServiceProvider).seekToStart();
+          _audioService.seekToStart();
         }
       });
     });
 
     final position = ref.watch(positionProvider);
-    final audioService = ref.watch(audioServiceProvider);
     final playerState = ref.watch(playerStateProvider);
 
     final posMs =
@@ -189,7 +206,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                       color: const Color(0xFFCFB53B),
                     ),
                     onPressed: () =>
-                        isPlaying ? audioService.pause() : audioService.play(),
+                        isPlaying ? _audioService.pause() : _audioService.play(),
                   ),
                 ),
               ],
