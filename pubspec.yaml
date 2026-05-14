@@ -33,6 +33,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   just_audio: ^0.9.40
+  audio_session: ^0.1.21
   pitch_detector_dart: ^0.0.7
   record: ^6.0.0
   permission_handler: ^11.3.0
@@ -41,6 +42,7 @@ dependencies:
   cloud_firestore: ^5.0.0
   firebase_auth: ^5.0.0
   google_fonts: ^6.1.0
+  flutter_sound: ^9.30.0
 
 dev_dependencies:
   flutter_test:

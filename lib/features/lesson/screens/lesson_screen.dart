@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pitch_detector_dart/pitch_detector.dart';
-import 'package:record/record.dart';
 
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
@@ -31,70 +32,38 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   List<ChantPhrase> _phrases = [];
   bool _isLoading = true;
 
-  AudioRecorder? _recorder;
+  FlutterSoundRecorder? _recorder;
+  StreamController<Uint8List>? _foodController;
+  StreamSubscription? _recordingSub;
   PitchDetector? _detector;
   final List<int> _pcmBuf = [];
   String? _detectedNote;
   String _micDebug = 'starting...';
 
-  bool _pitchActive = false;
-  bool _pitchStarting = false;
-  bool _micGranted = false;
-
-  // Watchdog: restarts the stream if no PCM data arrives for 500 ms.
-  // This catches Samsung's silent freeze of AudioRecord during playback
-  // without triggering a playerState feedback loop.
-  Timer? _watchdog;
-  int _lastChunkMs = 0;
-
   @override
   void initState() {
     super.initState();
     _audioService = ref.read(audioServiceProvider);
-    _pitchActive = true;
-    _load();
-    _startPitch();
-    _startWatchdog();
+    _init();
   }
 
   @override
   void dispose() {
-    _pitchActive = false;
-    _watchdog?.cancel();
+    _recordingSub?.cancel();
+    _foodController?.close();
+    _recorder?.closeRecorder();
     _audioService.stop();
-    _recorder?.stop();
-    _recorder?.dispose();
     super.dispose();
   }
 
-  void _startWatchdog() {
-    _watchdog = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (!_pitchActive || !mounted || _pitchStarting || _lastChunkMs == 0) {
-        return;
-      }
-      final silenceMs =
-          DateTime.now().millisecondsSinceEpoch - _lastChunkMs;
-      if (silenceMs > 500) {
-        _restartMic();
-      }
-    });
-  }
+  Future<void> _init() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+    await session.setActive(true);
 
-  Future<void> _restartMic() async {
-    if (!_pitchActive || !mounted) return;
-    _pitchStarting = true;
-    _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // suppress watchdog during restart
-    await _recorder?.stop();
-    await _recorder?.dispose();
-    _recorder = null;
-    _pcmBuf.clear();
-    _pitchStarting = false;
-    _startPitch();
-  }
-
-  void _scheduleRestart() {
-    if (!_pitchActive || !mounted || _pitchStarting) return;
-    Future.delayed(const Duration(milliseconds: 300), _startPitch);
+    if (!mounted) return;
+    await _load();
+    await _startPitch();
   }
 
   Future<void> _load() async {
@@ -104,92 +73,71 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _phrases = loaded.phrases;
       _isLoading = false;
     });
-    await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.mp3');
+    await _audioService.loadAsset('assets/audio/tone1/${loaded.hymn}.wav');
+    await _audioService.setVolume(0.3);
   }
 
   Future<void> _startPitch() async {
-    if (!_pitchActive || !mounted || _pitchStarting) return;
-    _pitchStarting = true;
+    final status = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!status.isGranted) {
+      setState(() => _micDebug = 'mic: permission denied');
+      return;
+    }
+
+    _detector = PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
+    _recorder = FlutterSoundRecorder();
 
     try {
-      if (!_micGranted) {
-        final status = await Permission.microphone.request();
-        if (!mounted || !_pitchActive) return;
-        if (!status.isGranted) {
-          setState(() => _micDebug = 'mic: permission denied');
-          return;
-        }
-        _micGranted = true;
-      }
+      await _recorder!.openRecorder();
+      if (mounted) setState(() => _micDebug = 'recorder opened');
 
-      await _recorder?.stop();
-      await _recorder?.dispose();
-      _recorder = null;
-      _pcmBuf.clear();
-
-      _recorder = AudioRecorder();
-      _detector ??= PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
-
-      final stream = await _recorder!.startStream(
-        const RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: 44100,
-          numChannels: 1,
-          androidConfig: AndroidRecordConfig(
-            audioSource: AndroidAudioSource.unprocessed,
-          ),
-        ),
-      );
-
-      _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // reset watchdog clock
-      if (mounted) setState(() => _micDebug = 'listening');
+      _foodController = StreamController<Uint8List>();
 
       const needed = 2048 * 2;
-      stream.listen(
-        (chunk) async {
-          _lastChunkMs = DateTime.now().millisecondsSinceEpoch; // heartbeat
-          _pcmBuf.addAll(chunk);
-          while (_pcmBuf.length >= needed) {
-            final bytes = Uint8List.fromList(_pcmBuf.sublist(0, needed));
-            _pcmBuf.removeRange(0, needed);
+      _recordingSub = _foodController!.stream.listen((bytes) async {
+        _pcmBuf.addAll(bytes);
+        while (_pcmBuf.length >= needed) {
+          final chunk = Uint8List.fromList(_pcmBuf.sublist(0, needed));
+          _pcmBuf.removeRange(0, needed);
 
-            final samples = bytes.buffer.asInt16List();
-            var sumSq = 0.0;
-            for (final s in samples) {
-              sumSq += s * s;
-            }
-            final rms = sqrt(sumSq / samples.length) / 32768.0;
-
-            // 16× software gain: unprocessed mic is ~1–2% RMS raw.
-            final amplified = Int16List(samples.length);
-            for (int i = 0; i < samples.length; i++) {
-              amplified[i] = (samples[i] * 16).clamp(-32768, 32767).toInt();
-            }
-
-            final result = await _detector!
-                .getPitchFromIntBuffer(amplified.buffer.asUint8List());
-            if (mounted) {
-              setState(() {
-                _detectedNote =
-                    result.pitched ? hzToNoteName(result.pitch) : null;
-                _micDebug = result.pitched
-                    ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
-                    : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
-              });
-            }
+          final samples = chunk.buffer.asInt16List();
+          var sumSq = 0.0;
+          for (final s in samples) {
+            sumSq += s * s;
           }
-        },
-        onDone: _scheduleRestart,
-        onError: (e) {
-          if (mounted) setState(() => _micDebug = 'mic error — restarting');
-          _scheduleRestart();
-        },
+          final rms = sqrt(sumSq / samples.length) / 32768.0;
+
+          // 4× software gain — raw signal is already strong at ~35% RMS
+          final amplified = Int16List(samples.length);
+          for (int i = 0; i < samples.length; i++) {
+            amplified[i] = (samples[i] * 4).clamp(-32768, 32767).toInt();
+          }
+
+          final result = await _detector!
+              .getPitchFromIntBuffer(amplified.buffer.asUint8List());
+          if (mounted) {
+            setState(() {
+              _detectedNote =
+                  result.pitched ? hzToNoteName(result.pitch) : null;
+              _micDebug = result.pitched
+                  ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
+                  : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
+            });
+          }
+        }
+      });
+
+      await _recorder!.startRecorder(
+        toStream: _foodController!.sink,
+        codec: Codec.pcm16,
+        numChannels: 1,
+        sampleRate: 44100,
       );
+
+      if (mounted) setState(() => _micDebug = 'listening');
     } catch (e) {
       if (mounted) setState(() => _micDebug = 'error: $e');
-      _scheduleRestart();
-    } finally {
-      _pitchStarting = false;
     }
   }
 

@@ -23,9 +23,9 @@ class PitchTrackWidget extends StatelessWidget {
 
   static const double _height = 240.0;
   static const double _axisW = 40.0;
-  static const int _midiMin = 59; // B3
+  static const int _midiMin = 55; // G3
   static const int _midiMax = 65; // F4
-  static const _axisLabels = ['E4', 'D4', 'C4'];
+  static const _axisLabels = ['E4', 'D4', 'C4', 'A3', 'G3'];
 
   static int? _toMidi(String? note) {
     if (note == null) return null;
@@ -102,7 +102,7 @@ class _TrackPainter extends CustomPainter {
   static const double _blockW = 88.0;
   static const double _blockH = 28.0;
   // Y-axis MIDI range
-  static const int _midiMin = 59;
+  static const int _midiMin = 55;
   static const int _midiMax = 65;
   static const _gold = Color(0xFFCFB53B);
 
@@ -140,7 +140,7 @@ class _TrackPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = Colors.white10
       ..strokeWidth = 1;
-    for (final midi in [60, 62, 64]) {
+    for (final midi in [55, 57, 60, 62, 64]) {
       final y = _midiToY(midi, size.height);
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
@@ -239,7 +239,7 @@ class _TrackPainter extends CustomPainter {
 
     // Bar 2: voice bar (where you are singing) — moves in real-time
     if (detectedMidi != null) {
-      final dy = _midiToY(detectedMidi!, size.height);
+      final dy = _midiToY(detectedMidi!, size.height).clamp(0.0, size.height);
 
       final Color barColor;
       if (targetMidi == null) {

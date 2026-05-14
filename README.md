@@ -79,19 +79,21 @@ The first time you open a hymn lesson, the app will ask for microphone access. T
 
 ---
 
-## Installing on iPhone (iOS)
+## Building on iOS (macOS — for developers)
 
-iOS is not available yet.
+**Prerequisites:** macOS, Xcode 15+, Flutter stable, CocoaPods (`sudo gem install cocoapods`)
 
-Distributing an iOS app outside the App Store requires either:
+```bash
+git clone https://github.com/l337nr1c4n/orthodox-chant.git
+cd orthodox-chant
+flutter pub get
+cd ios && pod install && cd ..
+open ios/Runner.xcworkspace   # select your device in Xcode, then Run
+```
 
-- A Mac running Xcode to build and sideload directly to your device, or
-- A TestFlight invite from Apple's official beta platform
+Firebase is optional — the app runs fully offline without `GoogleService-Info.plist`. If you want Firebase features, add the file to `ios/Runner/` from the Firebase console (Project settings → iOS app).
 
-Neither is set up for this project yet. When iOS is ready, this section will have full instructions. Until then:
-
-- If you have a Mac and want to help set up the iOS build, contact Isaac.
-- If you want a TestFlight invite when it goes live, let Isaac know and he will add you to the list.
+**Note:** TestFlight distribution is not set up yet. Use Xcode direct install for now.
 
 ---
 
@@ -195,7 +197,7 @@ LibraryScreen ──nav──► LessonScreen(hymnId)
 | Framework        | Flutter (Dart) — single codebase, Android now, iOS later            |
 | Pitch detection  | `pitch_detector_dart` — pure Dart autocorrelation, no native bridge  |
 | Audio playback   | `just_audio` — industry standard, local assets, gapless              |
-| Mic stream       | `record` — raw PCM stream fed to pitch detector                      |
+| Mic stream       | `flutter_sound` — raw PCM stream; survives simultaneous playback on Samsung HAL |
 | State management | `flutter_riverpod` — lightweight, testable                           |
 | Backend          | Firebase Spark (free tier) — Firestore, Auth, App Distribution       |
 | CI/CD            | GitHub Actions + Fastlane                                            |
@@ -253,10 +255,10 @@ flutter test integration_test/
 ```
 
 **Pitch detection acceptance test (physical device only):**
-- Sing D4 (293.66 Hz) while targeting D4 → app shows ✓
-- Sing E4 while targeting D4 → app shows ↓
-- Sing C4 while targeting D4 → app shows ↑
-- Correct zone: ±50 cents
+- Sing A3 (220 Hz) while targeting A3 → app shows ✓
+- Sing B3 while targeting A3 → app shows ↓
+- Sing G3 while targeting A3 → app shows ↑
+- Correct zone: ±50 cents (one semitone)
 
 ---
 

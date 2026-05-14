@@ -58,3 +58,11 @@ ios/ServiceDefinitions.json
 # Generated files
 *.g.dart
 *.freezed.dart
+
+# Claude session logs
+.claude/
+
+# Temp and local files
+*.tmp
+goarch_permission_email.md
+google-services.json
