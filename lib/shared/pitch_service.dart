@@ -35,29 +35,31 @@ class PitchService {
     _noteController ??= StreamController<String?>.broadcast();
     _recorder = AudioRecorder();
 
-    if (!await _recorder!.hasPermission()) return;
+    try {
+      final stream = await _recorder!.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: _sampleRate,
+          numChannels: 1,
+        ),
+      );
 
-    final stream = await _recorder!.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: _sampleRate,
-        numChannels: 1,
-      ),
-    );
-
-    // PCM16 = 2 bytes per sample; accumulate until a full buffer is ready
-    const needed = _bufferSize * 2;
-    stream.listen((chunk) async {
-      _buffer.addAll(chunk);
-      while (_buffer.length >= needed) {
-        final toProcess = Uint8List.fromList(_buffer.sublist(0, needed));
-        _buffer.removeRange(0, needed);
-        final result = await _detector.getPitchFromIntBuffer(toProcess);
-        if (!(_noteController?.isClosed ?? true)) {
-          _noteController!.add(result.pitched ? hzToNoteName(result.pitch) : null);
+      // PCM16 = 2 bytes per sample; accumulate until a full buffer is ready
+      const needed = _bufferSize * 2;
+      stream.listen((chunk) async {
+        _buffer.addAll(chunk);
+        while (_buffer.length >= needed) {
+          final toProcess = Uint8List.fromList(_buffer.sublist(0, needed));
+          _buffer.removeRange(0, needed);
+          final result = await _detector.getPitchFromIntBuffer(toProcess);
+          if (!(_noteController?.isClosed ?? true)) {
+            _noteController!.add(result.pitched ? hzToNoteName(result.pitch) : null);
+          }
         }
-      }
-    });
+      });
+    } catch (_) {
+      // Permission denied or recording unavailable
+    }
   }
 
   Future<void> stop() async {

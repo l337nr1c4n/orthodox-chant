@@ -13,7 +13,7 @@ from pathlib import Path
 
 SAMPLE_RATE = 44100
 FADE_MS = 20
-SYLLABLE_MS = 450  # tone duration per syllable; 50ms silence gap follows naturally
+SYLLABLE_MS = 750  # tone duration per syllable; 50ms silence gap follows naturally
 
 NOTE_FREQS = {
     'C4': 261.63,
