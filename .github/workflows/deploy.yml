@@ -28,6 +28,10 @@ jobs:
       - name: Analyze
         run: flutter analyze --fatal-infos
 
+      - name: Inject google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
+
       - name: Unit tests
         run: flutter test test/unit/ --reporter=expanded
 
@@ -45,10 +49,6 @@ jobs:
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
-
-      - name: Inject google-services.json
-        run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
 
       - name: Build release APK
         env:
