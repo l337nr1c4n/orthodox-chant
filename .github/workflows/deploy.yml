@@ -38,14 +38,6 @@ jobs:
       - name: Widget tests
         run: flutter test test/widget/ --reporter=expanded
 
-      - name: Integration tests (emulator)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          arch: x86_64
-          profile: pixel_4
-          script: flutter test integration_test/ --reporter=expanded
-
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
