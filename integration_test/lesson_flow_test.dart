@@ -8,7 +8,7 @@ void main() {
 
   group('App launch', () {
     testWidgets('app launches without crash', (tester) async {
-      await tester.pumpWidget(const ProviderScope(child: App()));
+      await tester.pumpWidget(const ProviderScope(child: App(skipOnboarding: true)));
       await tester.pumpAndSettle();
       expect(find.byType(App), findsOneWidget);
     });

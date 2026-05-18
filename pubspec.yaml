@@ -43,6 +43,7 @@ dependencies:
   firebase_auth: ^5.0.0
   google_fonts: ^6.1.0
   flutter_sound: ^9.30.0
+  shared_preferences: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +52,15 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   integration_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#1A1A1A"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -66,3 +76,4 @@ flutter:
   assets:
     - assets/audio/tone1/
     - assets/data/
+    - assets/icons/

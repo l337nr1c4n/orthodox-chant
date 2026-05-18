@@ -4,7 +4,7 @@ import 'package:orthodox_chant/app.dart';
 
 void main() {
   testWidgets('app launches without crash', (WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: App()));
+    await tester.pumpWidget(const ProviderScope(child: App(skipOnboarding: true)));
     await tester.pump();
     expect(find.byType(App), findsOneWidget);
   });

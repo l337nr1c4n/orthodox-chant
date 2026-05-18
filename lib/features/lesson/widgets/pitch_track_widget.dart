@@ -12,6 +12,7 @@ class PitchTrackWidget extends StatelessWidget {
   final int currentIndex;
   final int positionMs; // current audio position in milliseconds
   final String? detectedNote;
+  final int transposeOffset;
 
   const PitchTrackWidget({
     super.key,
@@ -19,6 +20,7 @@ class PitchTrackWidget extends StatelessWidget {
     required this.currentIndex,
     required this.positionMs,
     required this.detectedNote,
+    this.transposeOffset = 0,
   });
 
   static const double _height = 240.0;
@@ -42,9 +44,11 @@ class PitchTrackWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final targetMidi = currentIndex < phrases.length
+    final rawTargetMidi = currentIndex < phrases.length
         ? _toMidi(phrases[currentIndex].targetNote)
         : null;
+    final targetMidi =
+        rawTargetMidi != null ? rawTargetMidi + transposeOffset : null;
 
     return SizedBox(
       height: _height,
@@ -85,6 +89,7 @@ class PitchTrackWidget extends StatelessWidget {
                   positionMs: positionMs,
                   targetMidi: targetMidi,
                   detectedMidi: _toMidi(detectedNote),
+                  transposeOffset: transposeOffset,
                 ),
               ),
             ),
@@ -111,6 +116,7 @@ class _TrackPainter extends CustomPainter {
   final int positionMs;
   final int? targetMidi;
   final int? detectedMidi;
+  final int transposeOffset;
 
   const _TrackPainter({
     required this.phrases,
@@ -118,6 +124,7 @@ class _TrackPainter extends CustomPainter {
     required this.positionMs,
     this.targetMidi,
     this.detectedMidi,
+    this.transposeOffset = 0,
   });
 
   double _midiToY(int midi, double height) =>
@@ -148,8 +155,9 @@ class _TrackPainter extends CustomPainter {
     // Note blocks for each phrase
     for (int i = 0; i < phrases.length; i++) {
       final phrase = phrases[i];
-      final midi = _toMidi(phrase.targetNote);
-      if (midi == null) continue;
+      final rawMidi = _toMidi(phrase.targetNote);
+      if (rawMidi == null) continue;
+      final midi = rawMidi + transposeOffset;
 
       // X offset relative to cursor based on time
       final blockX = cx + (phrase.audioOffsetMs - positionMs) * _pxPerMs;
@@ -292,5 +300,6 @@ class _TrackPainter extends CustomPainter {
   bool shouldRepaint(_TrackPainter old) =>
       old.positionMs != positionMs ||
       old.detectedMidi != detectedMidi ||
-      old.currentIndex != currentIndex;
+      old.currentIndex != currentIndex ||
+      old.transposeOffset != transposeOffset;
 }
