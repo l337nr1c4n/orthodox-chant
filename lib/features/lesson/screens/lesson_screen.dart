@@ -13,6 +13,7 @@ import 'package:pitch_detector_dart/pitch_detector.dart';
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
 import '../providers/audio_provider.dart';
+import '../providers/voice_range_provider.dart';
 import '../widgets/pitch_track_widget.dart';
 import '../../../shared/audio_service.dart';
 import '../../../shared/pitch_service.dart';
@@ -159,6 +160,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
     final position = ref.watch(positionProvider);
     final playerState = ref.watch(playerStateProvider);
+    final transposeOffset = ref.watch(voiceOffsetProvider).valueOrNull ?? 0;
 
     final posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
     final currentIdx = _currentIndex(posMs);
@@ -179,6 +181,21 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
             _phrases.isNotEmpty ? _phrases[0].greek : widget.hymnId,
           ),
           centerTitle: true,
+          bottom: transposeOffset != 0
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(24),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '♪ Adjusted for your voice',
+                      style: TextStyle(
+                        color: const Color(0xFFCFB53B).withAlpha(180),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                )
+              : null,
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
@@ -190,6 +207,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
                     currentIndex: currentIdx,
                     positionMs: posMs,
                     detectedNote: _detectedNote,
+                    transposeOffset: transposeOffset,
                   ),
                   const SizedBox(height: 8),
                   Text(

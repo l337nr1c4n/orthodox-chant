@@ -4,9 +4,13 @@ import 'core/theme.dart';
 import 'features/diagnostics/pitch_test_screen.dart';
 import 'features/library/screens/library_screen.dart';
 import 'features/lesson/screens/lesson_screen.dart';
+import 'features/onboarding/screens/onboarding_screen.dart';
+import 'features/onboarding/screens/calibration_screen.dart';
 
 class App extends ConsumerWidget {
-  const App({super.key});
+  const App({super.key, required this.skipOnboarding});
+
+  final bool skipOnboarding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -14,9 +18,11 @@ class App extends ConsumerWidget {
       title: 'Orthodox Chant',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      initialRoute: '/',
+      initialRoute: skipOnboarding ? '/' : '/onboarding',
       routes: {
         '/': (_) => const LibraryScreen(),
+        '/onboarding': (_) => const OnboardingScreen(),
+        '/calibration': (_) => const CalibrationScreen(),
         '/lesson': (ctx) => LessonScreen(
               hymnId: ModalRoute.of(ctx)!.settings.arguments as String,
             ),

@@ -14,14 +14,17 @@ final detectedNoteProvider = StreamProvider<String?>((ref) {
   return service.noteStream;
 });
 
-final pitchFeedbackProvider = Provider.family<PitchFeedback, String>((ref, targetNote) {
+typedef PitchFeedbackArg = ({String targetNote, int offset});
+
+final pitchFeedbackProvider =
+    Provider.family<PitchFeedback, PitchFeedbackArg>((ref, arg) {
   return ref.watch(detectedNoteProvider).when(
     data: (note) {
       if (note == null) return PitchFeedback.inactive;
       final detected = _noteToMidi(note);
-      final target = _noteToMidi(targetNote);
+      final target = _noteToMidi(arg.targetNote);
       if (detected == null || target == null) return PitchFeedback.inactive;
-      final diff = detected - target;
+      final diff = detected - (target + arg.offset);
       if (diff == 0) return PitchFeedback.correct;
       return diff < 0 ? PitchFeedback.tooLow : PitchFeedback.tooHigh;
     },

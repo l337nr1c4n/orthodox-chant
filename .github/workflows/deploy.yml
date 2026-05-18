@@ -28,6 +28,10 @@ jobs:
       - name: Analyze
         run: flutter analyze --fatal-infos
 
+      - name: Inject google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
+
       - name: Unit tests
         run: flutter test test/unit/ --reporter=expanded
 
@@ -46,26 +50,23 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
 
-      - name: Inject google-services.json
-        run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
-
       - name: Build release APK
         env:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-        run: |
-          flutter build apk --release \
-            --dart-define=KEY_ALIAS=$KEY_ALIAS \
-            --dart-define=KEY_PASSWORD=$KEY_PASSWORD \
-            --dart-define=STORE_PASSWORD=$STORE_PASSWORD
+        run: flutter build apk --release
+
+      - name: Install Fastlane
+        run: bundle install
+        working-directory: fastlane
 
       - name: Distribute via Fastlane
         env:
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: bundle exec fastlane distribute
+        working-directory: fastlane
 
       - name: Shred keystore
         if: always()
