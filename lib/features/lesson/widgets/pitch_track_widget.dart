@@ -83,6 +83,7 @@ class PitchTrackWidget extends StatelessWidget {
           Expanded(
             child: ClipRect(
               child: CustomPaint(
+                size: Size.infinite,
                 painter: _TrackPainter(
                   phrases: phrases,
                   currentIndex: currentIndex,
