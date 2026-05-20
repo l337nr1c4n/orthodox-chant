@@ -7,6 +7,10 @@ import '../models/chant_phrase.dart';
 /// Note blocks scroll left past it as the audio plays.
 /// Each block is drawn at the pitch height of its syllable.
 /// At the cursor: a gold bar shows the target; a colored bar shows the voice.
+///
+/// Visible MIDI range slides with [transposeOffset] so calibrated users
+/// (whose phrase notes are pre-transposed) still see the gold bar and
+/// blocks on-canvas.
 class PitchTrackWidget extends StatelessWidget {
   final List<ChantPhrase> phrases;
   final int currentIndex;
@@ -25,25 +29,47 @@ class PitchTrackWidget extends StatelessWidget {
 
   static const double _height = 240.0;
   static const double _axisW = 40.0;
-  static const int _midiMin = 55; // G3
-  static const int _midiMax = 65; // F4
-  static const _axisLabels = ['E4', 'D4', 'C4', 'A3', 'G3'];
+
+  // Base MIDI window when transposeOffset == 0.
+  // Shifts with the offset so the user's transposed notes stay on-canvas.
+  static const int _baseMidiMin = 55; // G3
+  static const int _baseMidiMax = 65; // F4
+
+  static const _noteNames = [
+    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
+  ];
+
+  static String _midiToName(int midi) {
+    final octave = (midi ~/ 12) - 1;
+    return '${_noteNames[midi % 12]}$octave';
+  }
 
   static int? _toMidi(String? note) {
     if (note == null) return null;
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     final match = RegExp(r'^([A-G]#?)(-?\d+)$').firstMatch(note);
     if (match == null) return null;
-    final idx = names.indexOf(match.group(1)!);
+    final idx = _noteNames.indexOf(match.group(1)!);
     if (idx < 0) return null;
     return (int.parse(match.group(2)!) + 1) * 12 + idx;
   }
 
-  static double _midiToFrac(int midi) =>
-      (_midiMax - midi) / (_midiMax - _midiMin);
-
   @override
   Widget build(BuildContext context) {
+    final visMidiMin = _baseMidiMin + transposeOffset;
+    final visMidiMax = _baseMidiMax + transposeOffset;
+
+    // 5 evenly-spaced MIDIs across the visible range (top → bottom).
+    final axisMidis = [
+      visMidiMax - 1,
+      visMidiMax - 3,
+      visMidiMax - 5,
+      visMidiMin + 2,
+      visMidiMin,
+    ];
+
+    double midiToFrac(int midi) =>
+        (visMidiMax - midi) / (visMidiMax - visMidiMin);
+
     final rawTargetMidi = currentIndex < phrases.length
         ? _toMidi(phrases[currentIndex].targetNote)
         : null;
@@ -61,13 +87,14 @@ class PitchTrackWidget extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                for (final label in _axisLabels)
+                for (final m in axisMidis)
                   Positioned(
                     right: 6,
-                    top: _midiToFrac(_toMidi(label)!) * _height - 8,
+                    top: midiToFrac(m) * _height - 8,
                     child: Text(
-                      label,
-                      style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      _midiToName(m),
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 11),
                     ),
                   ),
                 const Positioned(
@@ -91,6 +118,8 @@ class PitchTrackWidget extends StatelessWidget {
                   targetMidi: targetMidi,
                   detectedMidi: _toMidi(detectedNote),
                   transposeOffset: transposeOffset,
+                  visMidiMin: visMidiMin,
+                  visMidiMax: visMidiMax,
                 ),
               ),
             ),
@@ -107,9 +136,6 @@ class _TrackPainter extends CustomPainter {
   // Note block dimensions
   static const double _blockW = 88.0;
   static const double _blockH = 28.0;
-  // Y-axis MIDI range
-  static const int _midiMin = 55;
-  static const int _midiMax = 65;
   static const _gold = Color(0xFFCFB53B);
 
   final List<ChantPhrase> phrases;
@@ -118,18 +144,22 @@ class _TrackPainter extends CustomPainter {
   final int? targetMidi;
   final int? detectedMidi;
   final int transposeOffset;
+  final int visMidiMin;
+  final int visMidiMax;
 
   const _TrackPainter({
     required this.phrases,
     required this.currentIndex,
     required this.positionMs,
+    required this.visMidiMin,
+    required this.visMidiMax,
     this.targetMidi,
     this.detectedMidi,
     this.transposeOffset = 0,
   });
 
   double _midiToY(int midi, double height) =>
-      (_midiMax - midi) / (_midiMax - _midiMin) * height;
+      (visMidiMax - midi) / (visMidiMax - visMidiMin) * height;
 
   static int? _toMidi(String note) {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -144,11 +174,18 @@ class _TrackPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2; // cursor X (fixed center)
 
-    // Faint horizontal grid lines at C4, D4, E4
+    // Faint horizontal grid lines across the visible range.
     final gridPaint = Paint()
       ..color = Colors.white10
       ..strokeWidth = 1;
-    for (final midi in [55, 57, 60, 62, 64]) {
+    final gridMidis = [
+      visMidiMin,
+      visMidiMin + 2,
+      visMidiMin + 5,
+      visMidiMin + 7,
+      visMidiMax - 1,
+    ];
+    for (final midi in gridMidis) {
       final y = _midiToY(midi, size.height);
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
@@ -302,5 +339,7 @@ class _TrackPainter extends CustomPainter {
       old.positionMs != positionMs ||
       old.detectedMidi != detectedMidi ||
       old.currentIndex != currentIndex ||
-      old.transposeOffset != transposeOffset;
+      old.transposeOffset != transposeOffset ||
+      old.visMidiMin != visMidiMin ||
+      old.visMidiMax != visMidiMax;
 }
