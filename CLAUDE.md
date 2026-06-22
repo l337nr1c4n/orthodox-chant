@@ -57,16 +57,15 @@ assets/data/tone1_trisagion.json
   (loads JSON, parses ChantPhrase list)        │
         │                                      │
         ▼                                      ▼
-  AudioProvider (Riverpod)          PitchProvider (Riverpod)
-  └─ AudioService (just_audio)      └─ PitchService (pitch_detector_dart)
-      plays reference MP3               mic stream → Hz → note name
-      exposes positionStream            emits detected note name
+  AudioProvider (Riverpod)          PitchAnalyzer (shared, pure)
+  └─ AudioService (just_audio)      └─ PCM16 → Hz → note name (note_utils)
+      plays reference WAV               fed by flutter_sound (lesson) or
+      exposes positionStream            PitchService→record (calibration)
         │                                      │
         └──────────────┬───────────────────────┘
                        ▼
                LessonScreen
-               ├── PhraseDisplayWidget  (Greek + transliteration, current syllable highlighted)
-               └── PitchFeedbackWidget  (↑ / ✓ / ↓  animated indicator)
+               └── PitchTrackWidget  (karaoke track: scrolling target + live voice bar)
 
 LibraryScreen ──nav──► LessonScreen(hymnId)
 ```
@@ -96,6 +95,8 @@ orthodox-chant/
 │   ├── core/
 │   │   ├── firebase_init.dart    # try/catch Firebase.initializeApp()
 │   │   ├── theme.dart            # dark bg, gold #CFB53B primary, Cinzel/Roboto Serif
+│   │   ├── note_utils.dart       # hzToNoteName, noteToMidi, midiToNoteName (single source)
+│   │   ├── preferences_service.dart  # onboarding flag + voice offset (SharedPreferences)
 │   │   └── tone_repository.dart  # rootBundle.loadString → JSON → List<ChantPhrase>
 │   ├── features/
 │   │   ├── lesson/
@@ -103,13 +104,12 @@ orthodox-chant/
 │   │   │   │   ├── chant_phrase.dart   # greek, transliteration, targetNote, audioOffsetMs
 │   │   │   │   └── tone.dart          # id, name, mode, hymns list
 │   │   │   ├── providers/
-│   │   │   │   ├── audio_provider.dart    # audioServiceProvider, positionProvider
-│   │   │   │   └── pitch_provider.dart   # pitchServiceProvider, detectedNoteProvider, pitchFeedbackProvider
+│   │   │   │   ├── audio_provider.dart        # audioServiceProvider, positionProvider, playerStateProvider
+│   │   │   │   └── voice_range_provider.dart  # voiceOffsetProvider (calibrated transpose)
 │   │   │   ├── screens/
 │   │   │   │   └── lesson_screen.dart
 │   │   │   └── widgets/
-│   │   │       ├── pitch_feedback_widget.dart   # ↑/✓/↓ AnimatedSwitcher
-│   │   │       └── phrase_display_widget.dart   # Greek + transliteration, gold highlight
+│   │   │       └── pitch_track_widget.dart   # karaoke pitch track (target + live voice bar)
 │   │   └── library/
 │   │       ├── screens/
 │   │       │   └── library_screen.dart    # hardcoded 2 hymns for POC
@@ -117,24 +117,26 @@ orthodox-chant/
 │   │           └── hymn_card.dart
 │   └── shared/
 │       ├── audio_service.dart    # wraps just_audio AudioPlayer
-│       └── pitch_service.dart    # wraps pitch_detector_dart + hzToNoteName
+│       ├── pitch_analyzer.dart   # shared PCM16 → pitch helper (buffer + RMS + gain + detect)
+│       └── pitch_service.dart    # record-based mic → noteStream (calibration); uses PitchAnalyzer
 ├── assets/
 │   ├── audio/
 │   │   └── tone1/
-│   │       ├── kyrie_eleison.mp3   # recorded by partner; placeholder OK for POC
-│   │       └── trisagion.mp3
+│   │       ├── kyrie_eleison.wav   # bundled & played (mp3 masters kept on disk, not shipped)
+│   │       └── trisagion.wav
 │   └── data/
 │       ├── tone1_kyrie.json
 │       └── tone1_trisagion.json
 ├── test/
 │   ├── unit/
-│   │   ├── pitch_service_test.dart
+│   │   ├── note_utils_test.dart
+│   │   ├── pitch_analyzer_test.dart
 │   │   ├── chant_phrase_test.dart
 │   │   └── tone_repository_test.dart
 │   └── widget/
 │       ├── lesson_screen_test.dart
 │       ├── library_screen_test.dart
-│       └── pitch_feedback_widget_test.dart
+│       └── pitch_track_widget_test.dart
 ├── integration_test/
 │   └── lesson_flow_test.dart
 ├── fastlane/
@@ -197,16 +199,16 @@ String? hzToNoteName(double hz) {
 
 Reference values: A4=440Hz, D4=293.66Hz, E4=329.63Hz, C4=261.63Hz
 
-### Feedback derivation (pitch_provider.dart)
+### Feedback derivation (pitch_track_widget.dart)
 
-Convert both target and detected note to MIDI number, compare:
-- `|detectedMidi - targetMidi| == 0` → correct (within ±50 cents = same semitone in 12-TET)
-- `detected < target` → tooLow (user must sing higher → show ↑)
-- `detected > target` → tooHigh (user must sing lower → show ↓)
+Convert both target and detected note to MIDI number (`note_utils.noteToMidi`), compare:
+- `detected == target` → correct (within ±50 cents = same semitone in 12-TET) → green voice bar
+- `detected < target` → user must sing higher → blue voice bar (below the gold target)
+- `detected > target` → user must sing lower → red voice bar (above the gold target)
 
-PitchFeedback enum: `tooLow | correct | tooHigh | inactive`
+The live voice bar is drawn at the cursor by `_TrackPainter`; the gold bar marks the target.
 
-### Phrase synchronization (phrase_display_widget.dart)
+### Phrase synchronization (lesson_screen.dart)
 
 ```dart
 final currentIdx = phrases.lastIndexWhere(
@@ -216,7 +218,7 @@ final currentIdx = phrases.lastIndexWhere(
 
 ### Mic stream approach
 
-`record` package (`audio_stream`) provides raw PCM bytes → feed into `pitch_detector_dart`'s `PitchDetector`. `pitch_detector_dart` expects raw PCM; this avoids any native bridge.
+Mic backends emit raw PCM16 bytes → fed into the shared `PitchAnalyzer` (`lib/shared/pitch_analyzer.dart`), which buffers 2048-sample frames and runs `pitch_detector_dart`. The lesson uses `flutter_sound` (it must record while audio plays); calibration and the diagnostics screen use the `record` package. No native bridge.
 
 ---
 

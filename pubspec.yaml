@@ -74,6 +74,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/audio/tone1/
+    # Only the played .wav files are bundled. The .mp3 source/master copies
+    # (incl. *_unprocessed.mp3) stay on disk but are intentionally not shipped.
+    - assets/audio/tone1/kyrie_eleison.wav
+    - assets/audio/tone1/trisagion.wav
     - assets/data/
     - assets/icons/

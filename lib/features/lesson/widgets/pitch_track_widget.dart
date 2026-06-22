@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/note_utils.dart';
 import '../models/chant_phrase.dart';
 
 /// Scrolling karaoke-style pitch track.
@@ -35,24 +36,6 @@ class PitchTrackWidget extends StatelessWidget {
   static const int _baseMidiMin = 55; // G3
   static const int _baseMidiMax = 65; // F4
 
-  static const _noteNames = [
-    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
-  ];
-
-  static String _midiToName(int midi) {
-    final octave = (midi ~/ 12) - 1;
-    return '${_noteNames[midi % 12]}$octave';
-  }
-
-  static int? _toMidi(String? note) {
-    if (note == null) return null;
-    final match = RegExp(r'^([A-G]#?)(-?\d+)$').firstMatch(note);
-    if (match == null) return null;
-    final idx = _noteNames.indexOf(match.group(1)!);
-    if (idx < 0) return null;
-    return (int.parse(match.group(2)!) + 1) * 12 + idx;
-  }
-
   @override
   Widget build(BuildContext context) {
     final visMidiMin = _baseMidiMin + transposeOffset;
@@ -71,7 +54,7 @@ class PitchTrackWidget extends StatelessWidget {
         (visMidiMax - midi) / (visMidiMax - visMidiMin);
 
     final rawTargetMidi = currentIndex < phrases.length
-        ? _toMidi(phrases[currentIndex].targetNote)
+        ? noteToMidi(phrases[currentIndex].targetNote)
         : null;
     final targetMidi =
         rawTargetMidi != null ? rawTargetMidi + transposeOffset : null;
@@ -92,7 +75,7 @@ class PitchTrackWidget extends StatelessWidget {
                     right: 6,
                     top: midiToFrac(m) * _height - 8,
                     child: Text(
-                      _midiToName(m),
+                      midiToNoteName(m),
                       style:
                           const TextStyle(color: Colors.white38, fontSize: 11),
                     ),
@@ -116,7 +99,8 @@ class PitchTrackWidget extends StatelessWidget {
                   currentIndex: currentIndex,
                   positionMs: positionMs,
                   targetMidi: targetMidi,
-                  detectedMidi: _toMidi(detectedNote),
+                  detectedMidi:
+                      detectedNote == null ? null : noteToMidi(detectedNote!),
                   transposeOffset: transposeOffset,
                   visMidiMin: visMidiMin,
                   visMidiMax: visMidiMax,
@@ -161,15 +145,6 @@ class _TrackPainter extends CustomPainter {
   double _midiToY(int midi, double height) =>
       (visMidiMax - midi) / (visMidiMax - visMidiMin) * height;
 
-  static int? _toMidi(String note) {
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    final match = RegExp(r'^([A-G]#?)(-?\d+)$').firstMatch(note);
-    if (match == null) return null;
-    final idx = names.indexOf(match.group(1)!);
-    if (idx < 0) return null;
-    return (int.parse(match.group(2)!) + 1) * 12 + idx;
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2; // cursor X (fixed center)
@@ -193,7 +168,7 @@ class _TrackPainter extends CustomPainter {
     // Note blocks for each phrase
     for (int i = 0; i < phrases.length; i++) {
       final phrase = phrases[i];
-      final rawMidi = _toMidi(phrase.targetNote);
+      final rawMidi = noteToMidi(phrase.targetNote);
       if (rawMidi == null) continue;
       final midi = rawMidi + transposeOffset;
 

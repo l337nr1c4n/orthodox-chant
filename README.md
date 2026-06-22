@@ -174,16 +174,15 @@ assets/data/tone1_trisagion.json
   (loads JSON, parses ChantPhrase list)        │
         │                                      │
         ▼                                      ▼
-  AudioProvider (Riverpod)          PitchProvider (Riverpod)
-  └─ AudioService (just_audio)      └─ PitchService (pitch_detector_dart)
-      plays reference tone               mic stream → Hz → note name
-      exposes positionStream            emits detected note name
+  AudioProvider (Riverpod)          PitchAnalyzer (shared, pure)
+  └─ AudioService (just_audio)      └─ PCM16 → Hz → note name (note_utils)
+      plays reference WAV               fed by flutter_sound (lesson) or
+      exposes positionStream            PitchService→record (calibration)
         │                                      │
         └──────────────┬───────────────────────┘
                        ▼
                LessonScreen
-               ├── PhraseDisplayWidget  (Greek + transliteration, current syllable highlighted)
-               └── PitchFeedbackWidget  (↑ / ✓ / ↓  animated indicator)
+               └── PitchTrackWidget  (karaoke track: scrolling target + live voice bar)
 
 LibraryScreen ──nav──► LessonScreen(hymnId)
 ```
