@@ -48,7 +48,7 @@ dev_dependencies:
 
 ## Architecture
 
-```
+```text
 assets/data/tone1_kyrie.json
 assets/data/tone1_trisagion.json
         │
@@ -74,7 +74,7 @@ LibraryScreen ──nav──► LessonScreen(hymnId)
 
 ## Project Directory Tree
 
-```
+```text
 orthodox-chant/
 ├── .github/
 │   ├── workflows/
@@ -202,6 +202,7 @@ Reference values: A4=440Hz, D4=293.66Hz, E4=329.63Hz, C4=261.63Hz
 ### Feedback derivation (pitch_track_widget.dart)
 
 Convert both target and detected note to MIDI number (`note_utils.noteToMidi`), compare:
+
 - `detected == target` → correct (within ±50 cents = same semitone in 12-TET) → green voice bar
 - `detected < target` → user must sing higher → blue voice bar (below the gold target)
 - `detected > target` → user must sing lower → red voice bar (above the gold target)
@@ -225,6 +226,7 @@ Mic backends emit raw PCM16 bytes → fed into the shared `PitchAnalyzer` (`lib/
 ## POC Content Scope
 
 **One tone, two hymns:**
+
 - Tone 1 (Πρῶτος Ἦχος) — First tone, plagal mode, most foundational
 - Kyrie Eleison (Κύριε ἐλέησον) — 7 phrases, universal, short
 - Trisagion (Ἅγιος ὁ Θεός) — 3-phrase placeholder
@@ -236,10 +238,12 @@ Audio: MP3, recorded by partner, bundled in APK assets (offline, avoids Firebase
 ## CI/CD Pipeline
 
 ### PR Check (.github/workflows/pr_check.yml)
+
 Trigger: `pull_request` → `main`
 Steps: Java 17 + Flutter stable → pub get → analyze → test unit/ + widget/ → build apk --debug
 
 ### Deploy (.github/workflows/deploy.yml)
+
 Trigger: `push` → `main`
 Steps: same → integration_test/ on Android emulator (API 29) → decode keystore → inject google-services.json → build apk --release with signing → fastlane distribute → shred keystore
 
@@ -320,6 +324,7 @@ Backlog: **Linear** (free ≤ 2 members). Branch naming: `CHT-{id}/short-kebab-d
 6. Non-developer (parish member) completes a lesson flow without instructions
 
 **Pitch detection acceptance test:**
+
 - Sing D4 (293.66 Hz) → ✓ correct
 - Sing E4 (329.63 Hz) while targeting D4 → ↓ too high
 - Sing C4 (261.63 Hz) while targeting D4 → ↑ too low

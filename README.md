@@ -165,7 +165,7 @@ flutter run
 
 ## Architecture
 
-```
+```text
 assets/data/tone1_kyrie.json
 assets/data/tone1_trisagion.json
         │
@@ -205,7 +205,7 @@ LibraryScreen ──nav──► LessonScreen(hymnId)
 
 ## Project Structure
 
-```
+```text
 orthodox-chant/
 ├── lib/
 │   ├── main.dart
@@ -254,6 +254,7 @@ flutter test integration_test/
 ```
 
 **Pitch detection acceptance test (physical device only):**
+
 - Sing A3 (220 Hz) while targeting A3 → app shows ✓
 - Sing B3 while targeting A3 → app shows ↓
 - Sing G3 while targeting A3 → app shows ↑
@@ -290,7 +291,7 @@ We use **[Linear](https://linear.app)** for story tracking. Reach out to Isaac f
 
 ### Branch Naming
 
-```
+```text
 ORT-{linear-id}/short-kebab-description
 
 # Examples
