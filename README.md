@@ -165,7 +165,7 @@ flutter run
 
 ## Architecture
 
-```
+```text
 assets/data/tone1_kyrie.json
 assets/data/tone1_trisagion.json
         │
@@ -174,16 +174,15 @@ assets/data/tone1_trisagion.json
   (loads JSON, parses ChantPhrase list)        │
         │                                      │
         ▼                                      ▼
-  AudioProvider (Riverpod)          PitchProvider (Riverpod)
-  └─ AudioService (just_audio)      └─ PitchService (pitch_detector_dart)
-      plays reference tone               mic stream → Hz → note name
-      exposes positionStream            emits detected note name
+  AudioProvider (Riverpod)          PitchAnalyzer (shared, pure)
+  └─ AudioService (just_audio)      └─ PCM16 → Hz → note name (note_utils)
+      plays reference WAV               fed by flutter_sound (lesson) or
+      exposes positionStream            PitchService→record (calibration)
         │                                      │
         └──────────────┬───────────────────────┘
                        ▼
                LessonScreen
-               ├── PhraseDisplayWidget  (Greek + transliteration, current syllable highlighted)
-               └── PitchFeedbackWidget  (↑ / ✓ / ↓  animated indicator)
+               └── PitchTrackWidget  (karaoke track: scrolling target + live voice bar)
 
 LibraryScreen ──nav──► LessonScreen(hymnId)
 ```
@@ -206,7 +205,7 @@ LibraryScreen ──nav──► LessonScreen(hymnId)
 
 ## Project Structure
 
-```
+```text
 orthodox-chant/
 ├── lib/
 │   ├── main.dart
@@ -255,6 +254,7 @@ flutter test integration_test/
 ```
 
 **Pitch detection acceptance test (physical device only):**
+
 - Sing A3 (220 Hz) while targeting A3 → app shows ✓
 - Sing B3 while targeting A3 → app shows ↓
 - Sing G3 while targeting A3 → app shows ↑
@@ -291,7 +291,7 @@ We use **[Linear](https://linear.app)** for story tracking. Reach out to Isaac f
 
 ### Branch Naming
 
-```
+```text
 ORT-{linear-id}/short-kebab-description
 
 # Examples

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../../core/note_utils.dart';
 import '../../../core/preferences_service.dart';
 import '../../../shared/pitch_service.dart';
 
@@ -103,7 +104,7 @@ class _CalibrationScreenState extends State<CalibrationScreen>
       return;
     }
 
-    final midis = _collectedNotes.map(_noteToMidi).whereType<int>().toList()..sort();
+    final midis = _collectedNotes.map(noteToMidi).whereType<int>().toList()..sort();
     final median = midis[midis.length ~/ 2];
     final offset = (median - _baselineMidi).clamp(-24, 24);
 
@@ -111,7 +112,7 @@ class _CalibrationScreenState extends State<CalibrationScreen>
     await prefs.setVoiceOffset(offset);
     await prefs.setOnboardingComplete();
 
-    final resultNote = _midiToNoteName(median);
+    final resultNote = midiToNoteName(median);
     setState(() {
       _state = _CalibState.done;
       _resultNote = resultNote;
@@ -120,22 +121,6 @@ class _CalibrationScreenState extends State<CalibrationScreen>
 
   void _startLearning() {
     Navigator.pushReplacementNamed(context, '/');
-  }
-
-  static int? _noteToMidi(String note) {
-    final match = RegExp(r'^([A-G]#?)(-?\d+)$').firstMatch(note);
-    if (match == null) return null;
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    final nameIdx = names.indexOf(match.group(1)!);
-    if (nameIdx < 0) return null;
-    final octave = int.parse(match.group(2)!);
-    return (octave + 1) * 12 + nameIdx;
-  }
-
-  static String _midiToNoteName(int midi) {
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    final octave = (midi ~/ 12) - 1;
-    return '${names[midi % 12]}$octave';
   }
 
   @override

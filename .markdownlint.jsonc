@@ -1,0 +1,13 @@
+{
+  // markdownlint config for the project docs (CLAUDE.md, README.md).
+  // Keep the structural rules that catch real problems; disable the two
+  // purely-stylistic rules that fight this repo's intentional formatting.
+  "default": true,
+
+  // Line length: the docs use long prose lines and wide tables on purpose.
+  "MD013": false,
+
+  // Table column style: tables use the compact `|---|` pipe style, which is
+  // fine and readable. Don't force aligned-cell reformatting of every table.
+  "MD060": false
+}

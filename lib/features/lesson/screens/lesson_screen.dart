@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:audio_session/audio_session.dart';
@@ -8,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:pitch_detector_dart/pitch_detector.dart';
 
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
@@ -16,7 +14,7 @@ import '../providers/audio_provider.dart';
 import '../providers/voice_range_provider.dart';
 import '../widgets/pitch_track_widget.dart';
 import '../../../shared/audio_service.dart';
-import '../../../shared/pitch_service.dart';
+import '../../../shared/pitch_analyzer.dart';
 
 class LessonScreen extends ConsumerStatefulWidget {
   final String hymnId;
@@ -36,8 +34,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   FlutterSoundRecorder? _recorder;
   StreamController<Uint8List>? _foodController;
   StreamSubscription? _recordingSub;
-  PitchDetector? _detector;
-  final List<int> _pcmBuf = [];
+  final PitchAnalyzer _analyzer = PitchAnalyzer(gain: 4);
   String? _detectedNote;
   String _micDebug = 'starting...';
 
@@ -98,7 +95,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       return;
     }
 
-    _detector = PitchDetector(audioSampleRate: 44100.0, bufferSize: 2048);
     _recorder = FlutterSoundRecorder();
 
     try {
@@ -107,38 +103,17 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
 
       _foodController = StreamController<Uint8List>();
 
-      const needed = 2048 * 2;
+      // 4× software gain lives in the analyzer (raw stream is quiet on-device).
       _recordingSub = _foodController!.stream.listen((bytes) async {
-        _pcmBuf.addAll(bytes);
-        while (_pcmBuf.length >= needed) {
-          final chunk = Uint8List.fromList(_pcmBuf.sublist(0, needed));
-          _pcmBuf.removeRange(0, needed);
-
-          final samples = chunk.buffer.asInt16List();
-          var sumSq = 0.0;
-          for (final s in samples) {
-            sumSq += s * s;
-          }
-          final rms = sqrt(sumSq / samples.length) / 32768.0;
-
-          // 4× software gain — raw signal is already strong at ~35% RMS
-          final amplified = Int16List(samples.length);
-          for (int i = 0; i < samples.length; i++) {
-            amplified[i] = (samples[i] * 4).clamp(-32768, 32767).toInt();
-          }
-
-          final result = await _detector!
-              .getPitchFromIntBuffer(amplified.buffer.asUint8List());
-          if (mounted) {
-            setState(() {
-              _detectedNote =
-                  result.pitched ? hzToNoteName(result.pitch) : null;
-              _micDebug = result.pitched
-                  ? '${result.pitch.toStringAsFixed(0)} Hz → ${_detectedNote ?? "?"}'
-                  : 'mic ${(rms * 100).toStringAsFixed(1)}%  no pitch';
-            });
-          }
-        }
+        final readings = await _analyzer.addBytes(bytes);
+        if (readings.isEmpty || !mounted) return;
+        final r = readings.last;
+        setState(() {
+          _detectedNote = r.note;
+          _micDebug = r.pitched
+              ? '${r.hz.toStringAsFixed(0)} Hz → ${r.note ?? "?"}'
+              : 'mic ${(r.rms * 100).toStringAsFixed(1)}%  no pitch';
+        });
       });
 
       await _recorder!.startRecorder(

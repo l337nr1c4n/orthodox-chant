@@ -1,12 +1,8 @@
-import 'dart:math';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:pitch_detector_dart/pitch_detector.dart';
 import 'package:record/record.dart';
 
-import '../../shared/pitch_service.dart';
+import '../../shared/pitch_analyzer.dart';
 
 class PitchTestScreen extends StatefulWidget {
   const PitchTestScreen({super.key});
@@ -20,11 +16,10 @@ class _PitchTestScreenState extends State<PitchTestScreen> {
   static const _bufferSize = 2048;
 
   final _recorder = AudioRecorder();
-  final _detector = PitchDetector(
-    audioSampleRate: _sampleRate.toDouble(),
+  final _analyzer = PitchAnalyzer(
+    sampleRate: _sampleRate,
     bufferSize: _bufferSize,
   );
-  final List<int> _buf = [];
 
   bool _micGranted = false;
   bool _running = false;
@@ -58,32 +53,16 @@ class _PitchTestScreenState extends State<PitchTestScreen> {
     if (!mounted) return;
     setState(() => _running = true);
 
-    const needed = _bufferSize * 2; // bytes for 2048 int16 samples
     stream.listen((chunk) async {
-      _buf.addAll(chunk);
-      while (_buf.length >= needed) {
-        final bytes = Uint8List.fromList(_buf.sublist(0, needed));
-        _buf.removeRange(0, needed);
-
-        // RMS amplitude — tells us if the mic is picking up sound at all
-        final samples = bytes.buffer.asInt16List();
-        var sumSq = 0.0;
-        for (final s in samples) {
-          sumSq += s * s;
-        }
-        final rms = sqrt(sumSq / samples.length) / 32768.0;
-
-        final result = await _detector.getPitchFromIntBuffer(bytes);
-
-        if (mounted) {
-          setState(() {
-            _amplitude = rms;
-            _pitched = result.pitched;
-            _hz = result.pitch;
-            _note = result.pitched ? hzToNoteName(result.pitch) : null;
-          });
-        }
-      }
+      final readings = await _analyzer.addBytes(chunk);
+      if (readings.isEmpty || !mounted) return;
+      final r = readings.last;
+      setState(() {
+        _amplitude = r.rms;
+        _pitched = r.pitched;
+        _hz = r.hz;
+        _note = r.note;
+      });
     });
   }
 
