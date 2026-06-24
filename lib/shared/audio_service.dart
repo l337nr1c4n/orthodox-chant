@@ -19,7 +19,12 @@ class AudioService {
   Future<void> play() => _player.play();
   Future<void> pause() => _player.pause();
   Future<void> stop() => _player.stop();
-  Future<void> seekToStart() => _player.seek(Duration.zero);
+
+  /// Jumps playback to [position]. Used by the Sing-phase "Hear It" replay to
+  /// seek to a phrase's offset (ORT-46).
+  Future<void> seekTo(Duration position) => _player.seek(position);
+  Future<void> seekToStart() => seekTo(Duration.zero);
+
   Future<void> setVolume(double v) => _player.setVolume(v);
   Future<void> dispose() => _player.dispose();
 }
