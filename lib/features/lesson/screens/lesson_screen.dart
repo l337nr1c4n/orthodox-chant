@@ -8,8 +8,10 @@ import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../../core/note_utils.dart';
 import '../../../core/tone_repository.dart';
 import '../models/chant_phrase.dart';
+import '../models/phrase_result.dart';
 import '../providers/audio_provider.dart';
 import '../providers/voice_range_provider.dart';
 import '../widgets/pitch_track_widget.dart';
@@ -43,10 +45,20 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   FlutterSoundRecorder? _recorder;
   StreamController<Uint8List>? _foodController;
   StreamSubscription? _recordingSub;
-  Timer? _phraseTimer; // populated by the per-phrase scoring window (ORT-44)
   final PitchAnalyzer _analyzer = PitchAnalyzer(gain: 4);
   String? _detectedNote;
   String _micDebug = '';
+
+  // Sing-phase per-phrase scoring (ORT-44). Each phrase gets a 3s window; a
+  // 50ms ticker fills the countdown ring while readings are captured.
+  static const _phraseWindow = Duration(seconds: 3);
+  static const _phraseTick = Duration(milliseconds: 50);
+  Timer? _phraseTimer;
+  int _singPhraseIndex = 0;
+  final List<String?> _currentPhraseReadings = [];
+  final List<PhraseResult> _phraseResults = [];
+  double _phraseProgress = 0.0;
+  bool _phraseWindowOpen = false;
 
   @override
   void initState() {
@@ -123,6 +135,11 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _recordingSub = _foodController!.stream.listen((bytes) async {
         final readings = await _analyzer.addBytes(bytes);
         if (readings.isEmpty || !mounted) return;
+        if (_phraseWindowOpen) {
+          for (final reading in readings) {
+            _currentPhraseReadings.add(reading.note);
+          }
+        }
         final r = readings.last;
         setState(() {
           _detectedNote = r.note;
@@ -142,8 +159,11 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       if (!mounted) return;
       setState(() {
         _phase = LessonPhase.sing;
+        _singPhraseIndex = 0;
+        _phraseResults.clear();
         _micDebug = 'listening';
       });
+      _startPhraseWindow();
     } catch (e) {
       if (mounted) setState(() => _micDebug = 'error: $e');
     }
@@ -158,12 +178,15 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _phase = LessonPhase.listen;
       _detectedNote = null;
       _micDebug = '';
+      _phraseProgress = 0.0;
     });
   }
 
   Future<void> _stopMic() async {
     _phraseTimer?.cancel();
     _phraseTimer = null;
+    _phraseWindowOpen = false;
+    _currentPhraseReadings.clear();
     await _recordingSub?.cancel();
     _recordingSub = null;
     await _foodController?.close();
@@ -172,6 +195,76 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     await _recorder?.closeRecorder();
     _recorder = null;
     _analyzer.reset();
+  }
+
+  /// Opens a fresh 3-second scoring window for the current phrase. A 50ms
+  /// ticker fills the countdown ring; the recorder listener captures readings
+  /// while [_phraseWindowOpen] is true.
+  void _startPhraseWindow() {
+    _phraseTimer?.cancel();
+    _currentPhraseReadings.clear();
+    setState(() {
+      _phraseProgress = 0.0;
+      _phraseWindowOpen = true;
+    });
+
+    var elapsed = Duration.zero;
+    _phraseTimer = Timer.periodic(_phraseTick, (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      elapsed += _phraseTick;
+      setState(() {
+        _phraseProgress =
+            (elapsed.inMilliseconds / _phraseWindow.inMilliseconds)
+                .clamp(0.0, 1.0);
+      });
+      if (elapsed >= _phraseWindow) {
+        timer.cancel();
+        _onPhraseWindowComplete();
+      }
+    });
+  }
+
+  /// Scores the just-closed window into a [PhraseResult], then advances to the
+  /// next phrase or ends the lesson.
+  void _onPhraseWindowComplete() {
+    _phraseWindowOpen = false;
+    final phrase = _phrases[_singPhraseIndex];
+    final offset = ref.read(voiceOffsetProvider).valueOrNull ?? 0;
+    final targetMidi = (noteToMidi(phrase.targetNote) ?? 0) + offset;
+    _phraseResults.add(PhraseResult(
+      phrase: phrase,
+      accuracy: PhraseResult.accuracyOf(_currentPhraseReadings, targetMidi),
+    ));
+
+    if (_singPhraseIndex < _phrases.length - 1) {
+      setState(() => _singPhraseIndex++);
+      _startPhraseWindow();
+    } else {
+      _onLessonComplete();
+    }
+  }
+
+  /// End of the Sing phase. ORT-47 replaces this with navigation to
+  /// LessonResultScreen; for now it summarises and returns to Listen.
+  Future<void> _onLessonComplete() async {
+    final passed = _phraseResults.where((r) => r.passed).length;
+    final total = _phraseResults.length;
+    await _stopMic();
+    if (!mounted) return;
+    setState(() {
+      _phase = LessonPhase.listen;
+      _detectedNote = null;
+      _micDebug = '';
+      _phraseProgress = 0.0;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Lesson complete — $passed of $total phrases matched'),
+      ),
+    );
   }
 
   int _currentIndex(int posMs) {
@@ -194,8 +287,17 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     final playerState = ref.watch(playerStateProvider);
     final transposeOffset = ref.watch(voiceOffsetProvider).valueOrNull ?? 0;
 
-    final posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
-    final currentIdx = _currentIndex(posMs);
+    final int posMs;
+    final int currentIdx;
+    if (_phase == LessonPhase.sing && _phrases.isNotEmpty) {
+      // Audio is paused during Sing; drive the track from the phrase being
+      // scored so its target bar sits at the cursor.
+      currentIdx = _singPhraseIndex;
+      posMs = _phrases[_singPhraseIndex].audioOffsetMs;
+    } else {
+      posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
+      currentIdx = _currentIndex(posMs);
+    }
 
     final isPlaying = playerState.when(
       data: (s) => s.playing,
@@ -312,18 +414,43 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   }
 
   Widget _buildSingControls() {
-    // The rich Sing-phase UI (countdown ring, per-phrase scoring, "Hear It")
-    // arrives in ORT-44/45/46. For now the live voice bar on the track gives
-    // real-time feedback and this returns the user to the Listen phase.
+    final total = _phrases.length;
+    // The countdown ring fills over each 3s phrase window. The richer Sing
+    // layout (large syllable, "Hear It") arrives in ORT-45/46.
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
-      child: TextButton.icon(
-        onPressed: _exitSingPhase,
-        icon: const Icon(Icons.arrow_back, color: Colors.white70),
-        label: const Text(
-          'Back to Listen',
-          style: TextStyle(color: Colors.white70),
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: _phraseProgress,
+                  strokeWidth: 5,
+                  color: _gold,
+                  backgroundColor: Colors.white12,
+                ),
+                Text(
+                  '${_singPhraseIndex + 1}/$total',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: _exitSingPhase,
+            icon: const Icon(Icons.arrow_back, color: Colors.white70),
+            label: const Text(
+              'Back to Listen',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
       ),
     );
   }
