@@ -5,6 +5,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_sound/flutter_sound.dart' hide PlayerState;
+import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -47,7 +48,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
   StreamSubscription? _recordingSub;
   final PitchAnalyzer _analyzer = PitchAnalyzer(gain: 4);
   String? _detectedNote;
-  String _micDebug = '';
 
   // Sing-phase per-phrase scoring (ORT-44). Each phrase gets a 3s window; a
   // 50ms ticker fills the countdown ring while readings are captured.
@@ -140,13 +140,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
             _currentPhraseReadings.add(reading.note);
           }
         }
-        final r = readings.last;
-        setState(() {
-          _detectedNote = r.note;
-          _micDebug = r.pitched
-              ? '${r.hz.toStringAsFixed(0)} Hz → ${r.note ?? "?"}'
-              : 'mic ${(r.rms * 100).toStringAsFixed(1)}%  no pitch';
-        });
+        setState(() => _detectedNote = readings.last.note);
       });
 
       await _recorder!.startRecorder(
@@ -161,11 +155,14 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         _phase = LessonPhase.sing;
         _singPhraseIndex = 0;
         _phraseResults.clear();
-        _micDebug = 'listening';
       });
       _startPhraseWindow();
-    } catch (e) {
-      if (mounted) setState(() => _micDebug = 'error: $e');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not start the microphone.')),
+        );
+      }
     }
   }
 
@@ -177,7 +174,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     setState(() {
       _phase = LessonPhase.listen;
       _detectedNote = null;
-      _micDebug = '';
       _phraseProgress = 0.0;
     });
   }
@@ -257,7 +253,6 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     setState(() {
       _phase = LessonPhase.listen;
       _detectedNote = null;
-      _micDebug = '';
       _phraseProgress = 0.0;
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -265,6 +260,16 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         content: Text('Lesson complete — $passed of $total phrases matched'),
       ),
     );
+  }
+
+  /// Replays the current phrase's reference audio for ~1.5s, then pauses.
+  Future<void> _hearIt() async {
+    final phrase = _phrases[_singPhraseIndex];
+    await _audioService.seekTo(Duration(milliseconds: phrase.audioOffsetMs));
+    await _audioService.play();
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+    await _audioService.pause();
   }
 
   int _currentIndex(int posMs) {
@@ -287,23 +292,7 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     final playerState = ref.watch(playerStateProvider);
     final transposeOffset = ref.watch(voiceOffsetProvider).valueOrNull ?? 0;
 
-    final int posMs;
-    final int currentIdx;
-    if (_phase == LessonPhase.sing && _phrases.isNotEmpty) {
-      // Audio is paused during Sing; drive the track from the phrase being
-      // scored so its target bar sits at the cursor.
-      currentIdx = _singPhraseIndex;
-      posMs = _phrases[_singPhraseIndex].audioOffsetMs;
-    } else {
-      posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
-      currentIdx = _currentIndex(posMs);
-    }
-
-    final isPlaying = playerState.when(
-      data: (s) => s.playing,
-      loading: () => false,
-      error: (_, _) => false,
-    );
+    final posMs = (position.valueOrNull ?? Duration.zero).inMilliseconds;
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
@@ -322,31 +311,9 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  const Spacer(),
-                  PitchTrackWidget(
-                    phrases: _phrases,
-                    currentIndex: currentIdx,
-                    positionMs: posMs,
-                    detectedNote: _detectedNote,
-                    transposeOffset: transposeOffset,
-                  ),
-                  const SizedBox(height: 8),
-                  if (_phase == LessonPhase.sing)
-                    Text(
-                      _micDebug,
-                      style: TextStyle(
-                        color: _detectedNote != null ? _gold : Colors.white24,
-                        fontSize: 12,
-                      ),
-                    ),
-                  const Spacer(),
-                  _phase == LessonPhase.listen
-                      ? _buildListenControls(isPlaying)
-                      : _buildSingControls(),
-                ],
-              ),
+            : _phase == LessonPhase.listen
+                ? _buildListenBody(posMs, transposeOffset, playerState)
+                : _buildSingBody(transposeOffset),
       ),
     );
   }
@@ -387,70 +354,175 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     return null;
   }
 
-  Widget _buildListenControls(bool isPlaying) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            iconSize: 64,
-            icon: Icon(
-              isPlaying ? Icons.pause_circle : Icons.play_circle,
-              color: _gold,
-            ),
-            onPressed: () =>
-                isPlaying ? _audioService.pause() : _audioService.play(),
+  // ── Listen phase ────────────────────────────────────────────────────────
+  Widget _buildListenBody(
+    int posMs,
+    int transposeOffset,
+    AsyncValue<PlayerState> playerState,
+  ) {
+    final currentIdx = _currentIndex(posMs);
+    final isPlaying = playerState.when(
+      data: (s) => s.playing,
+      loading: () => false,
+      error: (_, _) => false,
+    );
+
+    return Column(
+      children: [
+        const Spacer(),
+        PitchTrackWidget(
+          phrases: _phrases,
+          currentIndex: currentIdx,
+          positionMs: posMs,
+          detectedNote: _detectedNote,
+          transposeOffset: transposeOffset,
+        ),
+        const Spacer(),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                iconSize: 64,
+                icon: Icon(
+                  isPlaying ? Icons.pause_circle : Icons.play_circle,
+                  color: _gold,
+                ),
+                onPressed: () =>
+                    isPlaying ? _audioService.pause() : _audioService.play(),
+              ),
+              const SizedBox(height: 4),
+              ElevatedButton.icon(
+                onPressed: _enterSingPhase,
+                icon: const Icon(Icons.mic),
+                // Becomes "Sing Again" once a result has been recorded.
+                label: Text(_phraseResults.isEmpty ? 'Sing It' : 'Sing Again'),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          ElevatedButton.icon(
-            onPressed: _enterSingPhase,
-            icon: const Icon(Icons.mic),
-            label: const Text('Sing It'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _buildSingControls() {
+  // ── Sing phase ──────────────────────────────────────────────────────────
+  Widget _buildSingBody(int transposeOffset) {
     final total = _phrases.length;
-    // The countdown ring fills over each 3s phrase window. The richer Sing
-    // layout (large syllable, "Hear It") arrives in ORT-45/46.
+    final phrase = _phrases[_singPhraseIndex];
+    final rawTarget = noteToMidi(phrase.targetNote);
+    final targetMidi = rawTarget != null ? rawTarget + transposeOffset : null;
+    final targetName =
+        targetMidi != null ? midiToNoteName(targetMidi) : phrase.targetNote;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
+          const Spacer(flex: 2),
+          Text(
+            'Phrase ${_singPhraseIndex + 1} of $total',
+            style: GoogleFonts.robotoSerif(color: Colors.white54, fontSize: 14),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            phrase.greek,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.cinzel(
+              color: _gold,
+              fontSize: 56,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            phrase.transliteration,
+            style: GoogleFonts.robotoSerif(color: Colors.white70, fontSize: 20),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'target: $targetName',
+            style: const TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          const Spacer(),
+          // Countdown ring with the live voice indicator at its centre.
           SizedBox(
-            width: 56,
-            height: 56,
+            width: 96,
+            height: 96,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 CircularProgressIndicator(
                   value: _phraseProgress,
-                  strokeWidth: 5,
+                  strokeWidth: 6,
+                  strokeCap: StrokeCap.round,
                   color: _gold,
                   backgroundColor: Colors.white12,
                 ),
-                Text(
-                  '${_singPhraseIndex + 1}/$total',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
+                _buildVoiceIndicator(targetMidi),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          TextButton.icon(
-            onPressed: _exitSingPhase,
-            icon: const Icon(Icons.arrow_back, color: Colors.white70),
-            label: const Text(
-              'Back to Listen',
-              style: TextStyle(color: Colors.white70),
-            ),
+          const Spacer(flex: 2),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              TextButton.icon(
+                onPressed: _exitSingPhase,
+                icon: const Icon(Icons.arrow_back, color: Colors.white70),
+                label: const Text(
+                  'Back to Listen',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _hearIt,
+                icon: const Icon(Icons.volume_up, color: _gold),
+                label: const Text('Hear It', style: TextStyle(color: _gold)),
+              ),
+            ],
           ),
+          const SizedBox(height: 32),
         ],
+      ),
+    );
+  }
+
+  /// ↑ / ✓ / ↓ indicator comparing the live note to [targetMidi]
+  /// (✓ within one semitone, matching the scoring tolerance).
+  Widget _buildVoiceIndicator(int? targetMidi) {
+    final detectedMidi =
+        _detectedNote == null ? null : noteToMidi(_detectedNote!);
+
+    final String symbol;
+    final Color color;
+    if (detectedMidi == null || targetMidi == null) {
+      symbol = '—';
+      color = Colors.white24;
+    } else {
+      final diff = detectedMidi - targetMidi;
+      if (diff.abs() <= 1) {
+        symbol = '✓';
+        color = Colors.greenAccent;
+      } else if (diff < 0) {
+        symbol = '↑';
+        color = Colors.lightBlueAccent;
+      } else {
+        symbol = '↓';
+        color = Colors.redAccent;
+      }
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 150),
+      child: Text(
+        symbol,
+        key: ValueKey(symbol),
+        style: TextStyle(
+          fontSize: 40,
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
