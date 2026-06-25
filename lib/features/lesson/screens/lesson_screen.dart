@@ -18,6 +18,7 @@ import '../providers/voice_range_provider.dart';
 import '../widgets/pitch_track_widget.dart';
 import '../../../shared/audio_service.dart';
 import '../../../shared/pitch_analyzer.dart';
+import 'lesson_result_screen.dart';
 
 const Color _gold = Color(0xFFCFB53B);
 
@@ -243,11 +244,8 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
     }
   }
 
-  /// End of the Sing phase. ORT-47 replaces this with navigation to
-  /// LessonResultScreen; for now it summarises and returns to Listen.
+  /// End of the Sing phase: tear the mic down and show the result screen.
   Future<void> _onLessonComplete() async {
-    final passed = _phraseResults.where((r) => r.passed).length;
-    final total = _phraseResults.length;
     await _stopMic();
     if (!mounted) return;
     setState(() {
@@ -255,11 +253,24 @@ class _LessonScreenState extends ConsumerState<LessonScreen> {
       _detectedNote = null;
       _phraseProgress = 0.0;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Lesson complete — $passed of $total phrases matched'),
+
+    final action = await Navigator.of(context).push<ResultAction>(
+      MaterialPageRoute(
+        builder: (_) => LessonResultScreen(
+          hymnId: widget.hymnId,
+          results: List.of(_phraseResults),
+        ),
       ),
     );
+    if (!mounted) return;
+    switch (action) {
+      case ResultAction.tryAgain:
+        _enterSingPhase();
+      case ResultAction.backToHymns:
+        Navigator.of(context).pop(); // back to the hymn list
+      case null:
+        break; // dismissed with system back — stay on the lesson (Listen)
+    }
   }
 
   /// Replays the current phrase's reference audio for ~1.5s, then pauses.
