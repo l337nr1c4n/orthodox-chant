@@ -1,21 +1,32 @@
 import 'package:flutter/material.dart';
 
+const Color _gold = Color(0xFFCFB53B);
+
+/// A tappable card used for both tone chapters (in the library) and hymns
+/// (in the tone overview).
+///
+/// [leading] and [trailing] override the default gold stripe and chevron.
+/// A null [onTap] renders the card disabled/locked (dimmed, non-interactive) —
+/// used for "Coming soon" tones.
 class HymnCard extends StatelessWidget {
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Widget? leading;
+  final Widget? trailing;
 
   const HymnCard({
     super.key,
     required this.title,
     required this.subtitle,
-    required this.onTap,
+    this.onTap,
+    this.leading,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFCFB53B);
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
         onTap: onTap,
@@ -24,14 +35,15 @@ class HymnCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Container(
-                width: 4,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: gold,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+              leading ??
+                  Container(
+                    width: 4,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: _gold,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -52,11 +64,21 @@ class HymnCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: gold),
+              const SizedBox(width: 12),
+              trailing ?? const Icon(Icons.chevron_right, color: _gold),
             ],
           ),
         ),
       ),
     );
+
+    // A locked card (no onTap) is dimmed and ignores touches.
+    if (onTap == null) {
+      return Opacity(
+        opacity: 0.45,
+        child: IgnorePointer(child: card),
+      );
+    }
+    return card;
   }
 }

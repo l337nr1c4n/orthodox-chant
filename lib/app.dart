@@ -6,6 +6,7 @@ import 'features/library/screens/library_screen.dart';
 import 'features/lesson/screens/lesson_screen.dart';
 import 'features/onboarding/screens/onboarding_screen.dart';
 import 'features/onboarding/screens/calibration_screen.dart';
+import 'features/tones/screens/tone_overview_screen.dart';
 
 class App extends ConsumerWidget {
   const App({super.key, required this.skipOnboarding});
@@ -23,6 +24,9 @@ class App extends ConsumerWidget {
         '/': (_) => const LibraryScreen(),
         '/onboarding': (_) => const OnboardingScreen(),
         '/calibration': (_) => const CalibrationScreen(),
+        '/tone': (ctx) => ToneOverviewScreen(
+              toneId: ModalRoute.of(ctx)!.settings.arguments as String,
+            ),
         '/lesson': (ctx) => LessonScreen(
               hymnId: ModalRoute.of(ctx)!.settings.arguments as String,
             ),
