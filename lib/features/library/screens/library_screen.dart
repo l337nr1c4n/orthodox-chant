@@ -1,21 +1,12 @@
 import 'package:flutter/material.dart';
+
+import '../../tones/data/tone_data.dart';
 import '../widgets/hymn_card.dart';
 
+/// The home screen: a selector over the eight tones of the Octoechos. Tone 1
+/// is available; the rest are locked "Coming soon" placeholders.
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
-
-  static const _hymns = [
-    (
-      id: 'tone1_kyrie',
-      title: 'Κύριε ἐλέησον',
-      subtitle: 'Kyrie Eleison • Tone 1 • 7 phrases',
-    ),
-    (
-      id: 'tone1_trisagion',
-      title: 'Ἅγιος ὁ Θεός',
-      subtitle: 'Trisagion • Tone 1 • 25 phrases',
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -33,19 +24,28 @@ class LibraryScreen extends StatelessWidget {
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        children: _hymns
-            .map(
-              (h) => HymnCard(
-                title: h.title,
-                subtitle: h.subtitle,
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/lesson',
-                  arguments: h.id,
-                ),
-              ),
-            )
-            .toList(),
+        children: [
+          for (final tone in toneData)
+            HymnCard(
+              title: tone.greekName,
+              subtitle: tone.isAvailable
+                  ? '${tone.name} • ${tone.hymns.length} hymns'
+                  : tone.name,
+              onTap: tone.isAvailable
+                  ? () => Navigator.pushNamed(
+                        context,
+                        '/tone',
+                        arguments: tone.id,
+                      )
+                  : null,
+              trailing: tone.isAvailable
+                  ? null
+                  : const Text(
+                      'Coming soon',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+            ),
+        ],
       ),
     );
   }
